@@ -155,7 +155,7 @@ Your compiled APK will be located at:
 - **[Team NewPipe](https://github.com/TeamNewPipe/NewPipe)** — For pioneering private, tracker-free YouTube extraction.
 - **[YoutubeExplode](https://github.com/Hexer10/YoutubeExplode)** — Exceptional Dart YouTube metadata parser.
 - **[Ryan Heise](https://github.com/ryanheise)** — Creator of `just_audio` and `audio_service`.
-- **[Ember Mobile](https://github.com)** — UI inspiration and acoustic design concepts.
+- **[Ember Mobile](https://github.com/taezeem14/Ember)** — UI inspiration and acoustic design concepts.
 
 ---
 
