@@ -10,11 +10,54 @@ class StreamResolverService {
     _resolvedCache.remove(key);
   }
 
+  static final Set<String> _currentlyPreloading = {};
+
+  /// Checks if a song has already been pre-resolved into memory cache
+  static bool isPreloaded(Song song) {
+    final cacheKey = song.id.isNotEmpty ? song.id : song.streamUrl;
+    final cached = _resolvedCache[cacheKey];
+    return cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inHours < 4;
+  }
+
   /// Prefetch playable audio stream for a track in the background
   static void prefetchPlayableStreams(Song song) {
+    if (isPreloaded(song) || _currentlyPreloading.contains(song.id)) return;
+    _currentlyPreloading.add(song.id);
     resolvePlayableStreamCandidates(song).catchError((e) {
       debugPrint('[StreamResolverService] Prefetch background error for "${song.title}": $e');
       return <String>[];
+    }).whenComplete(() {
+      _currentlyPreloading.remove(song.id);
+    });
+  }
+
+  /// Proactively preloads an entire list of songs in parallel background batches
+  /// (e.g. all songs in a playlist, top trending, or search results)
+  static void preloadSongs(List<Song> songs, {int maxCount = 15}) {
+    final targets = songs.take(maxCount).where((s) => !isPreloaded(s) && !_currentlyPreloading.contains(s.id)).toList();
+    if (targets.isEmpty) return;
+
+    Future.microtask(() async {
+      // Process in concurrent batches of 3 to resolve quickly without network choking
+      const batchSize = 3;
+      for (int i = 0; i < targets.length; i += batchSize) {
+        final end = (i + batchSize < targets.length) ? i + batchSize : targets.length;
+        final batch = targets.sublist(i, end);
+        for (final s in batch) {
+          _currentlyPreloading.add(s.id);
+        }
+        await Future.wait(
+          batch.map((song) async {
+            try {
+              await resolvePlayableStreamCandidates(song);
+            } catch (e) {
+              debugPrint('[StreamResolverService] Batch preload error for "${song.title}": $e');
+            } finally {
+              _currentlyPreloading.remove(song.id);
+            }
+          }),
+        );
+      }
     });
   }
 

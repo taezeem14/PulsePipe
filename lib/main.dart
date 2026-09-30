@@ -20,6 +20,13 @@ void main() async {
     ),
   );
 
+  debugPrint = (String? message, {int? wrapWidth}) {
+    if (message != null) {
+      // ignore: avoid_print
+      print(message);
+    }
+  };
+
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     debugPrint('Ember Flutter Error: ${details.exception}');

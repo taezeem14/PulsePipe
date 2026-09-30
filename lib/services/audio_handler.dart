@@ -194,7 +194,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _player.positionStream.listen((pos) {
       if (_activeSponsorSegments.isNotEmpty && !_isSkippingSponsor) {
         final currentSec = pos.inMilliseconds / 1000.0;
+        // Never seek in the first 12 seconds to prevent stalling initial playback
+        if (currentSec < 12.0) return;
         for (final segment in _activeSponsorSegments) {
+          if (segment.start < 12.0) continue;
           if (currentSec >= segment.start && currentSec < (segment.end - 0.3)) {
             _isSkippingSponsor = true;
             debugPrint('SponsorBlock: auto-skipping ${segment.category} [${segment.start}s - ${segment.end}s]');
@@ -219,23 +222,26 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _activeSponsorSegments = [];
     _isSkippingSponsor = false;
 
-    // Query SponsorBlock skip segments asynchronously for YouTube tracks
-    String? ytVideoId;
-    if (song.id.startsWith('yt_')) {
-      ytVideoId = song.id.substring(3);
-    } else {
-      ytVideoId = YouTubeImporterService.extractVideoId(song.streamUrl);
-    }
-    if (ytVideoId != null && ytVideoId.isNotEmpty) {
-      SponsorBlockService.instance.getSkipSegments(ytVideoId).then((segments) {
-        if (_currentSong?.id == song.id) {
-          _activeSponsorSegments = segments;
-          if (segments.isNotEmpty) {
-            debugPrint('SponsorBlock: Loaded ${segments.length} skip segments for YouTube video $ytVideoId');
+    // Query SponsorBlock skip segments deferred (after 3s) so initial audio gets 100% bandwidth
+    Future.delayed(const Duration(seconds: 3), () {
+      if (_currentSong?.id != song.id) return;
+      String? ytVideoId;
+      if (song.id.startsWith('yt_')) {
+        ytVideoId = song.id.substring(3);
+      } else {
+        ytVideoId = YouTubeImporterService.extractVideoId(song.streamUrl);
+      }
+      if (ytVideoId != null && ytVideoId.isNotEmpty) {
+        SponsorBlockService.instance.getSkipSegments(ytVideoId).then((segments) {
+          if (_currentSong?.id == song.id) {
+            _activeSponsorSegments = segments;
+            if (segments.isNotEmpty) {
+              debugPrint('SponsorBlock: Loaded ${segments.length} skip segments for YouTube video $ytVideoId');
+            }
           }
-        }
-      }).catchError((_) {});
-    }
+        }).catchError((_) {});
+      }
+    });
     mediaItem.add(
       MediaItem(
         id: song.id,
@@ -262,11 +268,6 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         bufferedPosition: Duration.zero,
       ),
     );
-
-    // Stop previous track cleanly so old audio does not linger while new track is resolving
-    try {
-      await _player.stop();
-    } catch (_) {}
 
     try {
       final s = song.streamUrl;
@@ -304,6 +305,9 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         try {
           await _player.setUrl(
             url,
+            headers: const {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
             initialPosition: Duration.zero,
             preload: true,
           );

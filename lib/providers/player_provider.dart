@@ -276,17 +276,10 @@ class PlayerProvider extends ChangeNotifier {
 
   void _prefetchNextTrack() {
     if (_currentIndex + 1 < _queue.length) {
-      final next = _queue[_currentIndex + 1];
-      StreamResolverService.prefetchPlayableStreams(next);
-      if (_currentIndex + 2 < _queue.length) {
-        Future.delayed(const Duration(milliseconds: 1200), () {
-          if (_currentIndex + 2 < _queue.length) {
-            StreamResolverService.prefetchPlayableStreams(_queue[_currentIndex + 2]);
-          }
-        });
-      }
+      final upcoming = _queue.sublist(_currentIndex + 1);
+      StreamResolverService.preloadSongs(upcoming, maxCount: 12);
     } else if (_isAutoplayEnabled && _recommendations.isNotEmpty) {
-      StreamResolverService.prefetchPlayableStreams(_recommendations.first);
+      StreamResolverService.preloadSongs(_recommendations, maxCount: 6);
     }
   }
 
@@ -302,6 +295,7 @@ class PlayerProvider extends ChangeNotifier {
           if (newTracks.isNotEmpty) {
             _queue.addAll(newTracks);
             notifyListeners();
+            StreamResolverService.preloadSongs(newTracks, maxCount: 8);
           }
         } catch (_) {}
       }
@@ -336,9 +330,18 @@ class PlayerProvider extends ChangeNotifier {
     _isPlaying = true;
     _isLoadingStream = true;
     notifyListeners();
-    _loadLyrics(song);
-    _loadRecommendations(song);
+
+    // Start proactive background preloading for the rest of the queue
     _prefetchNextTrack();
+
+    // Defer non-critical auxiliary metadata tasks so audio stream has 100% network priority
+    Future.microtask(() {
+      if (currentSong?.id == song.id) {
+        _loadLyrics(song);
+        _loadRecommendations(song);
+      }
+    });
+
     await _audioHandler.playSong(song);
     _isLoadingStream = false;
     notifyListeners();
@@ -628,6 +631,7 @@ class PlayerProvider extends ChangeNotifier {
         if (_searchQuery == query) {
           if (results.isNotEmpty) {
             _searchResults = results;
+            StreamResolverService.preloadSongs(results, maxCount: 6);
           }
           _isSearching = false;
           notifyListeners();
@@ -748,8 +752,9 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> playPlaylist(Playlist playlist) async {
     if (playlist.songs.isNotEmpty) {
       _consecutiveStreamFailures = 0;
+      // Proactively preload the entire playlist so playback is gapless & seamless
       if (playlist.songs.length > 1) {
-        StreamResolverService.prefetchPlayableStreams(playlist.songs[1]);
+        StreamResolverService.preloadSongs(playlist.songs.sublist(1), maxCount: 20);
       }
       await playSong(playlist.songs.first, contextQueue: playlist.songs);
     }
@@ -878,6 +883,7 @@ class PlayerProvider extends ChangeNotifier {
       final tracks = await CatalogService.fetchCategory(categoryKey);
       if (tracks.isNotEmpty) {
         _youtubeTracks = tracks;
+        StreamResolverService.preloadSongs(tracks, maxCount: 10);
       }
     } catch (e) {
       debugPrint('Error loading YouTube category $categoryKey: $e');
@@ -896,6 +902,7 @@ class PlayerProvider extends ChangeNotifier {
       final tracks = await CatalogService.fetchTrending();
       if (tracks.isNotEmpty) {
         _youtubeTracks = tracks;
+        StreamResolverService.preloadSongs(tracks, maxCount: 10);
       }
     } catch (e) {
       debugPrint('Error loading YouTube trending: $e');

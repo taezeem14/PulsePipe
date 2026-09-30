@@ -76,7 +76,6 @@ class YouTubeImporterService {
     return const Duration(minutes: 3, seconds: 30);
   }
 
-  static final http.Client _httpClient = http.Client();
   static final YoutubeExplode _yt = YoutubeExplode();
   static final Map<String, ({List<String> urls, DateTime cachedAt})> _streamCache = {};
 
@@ -84,72 +83,6 @@ class YouTubeImporterService {
   static void invalidateCache(String videoId) {
     final cleanId = videoId.replaceFirst('yt_', '').trim();
     _streamCache.remove(cleanId);
-  }
-
-  /// Tier 1 Direct InnerTube Android VR stream extractor (Fastest: ~300-500ms, unciphered)
-  static Future<List<String>> _extractInnerTubeDirectStreams(String cleanId) async {
-    try {
-      final body = jsonEncode({
-        "context": {
-          "client": {
-            "clientName": "ANDROID_VR",
-            "clientVersion": "1.60.19",
-            "deviceMake": "Oculus",
-            "deviceModel": "Quest 3",
-            "hl": "en",
-            "gl": "US"
-          }
-        },
-        "videoId": cleanId,
-        "playbackContext": {
-          "contentPlaybackContext": {
-            "html5Preference": "HTML5_PREF_WANTS"
-          }
-        }
-      });
-
-      final resp = await _httpClient.post(
-        Uri.parse('https://www.youtube.com/youtubei/v1/player?prettyPrint=false'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Android; Mobile)',
-        },
-        body: body,
-      ).timeout(const Duration(milliseconds: 2500));
-
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final status = data['playabilityStatus']?['status'] as String?;
-        if (status == 'OK') {
-          final streamingData = data['streamingData'] as Map<String, dynamic>?;
-          if (streamingData != null) {
-            final formats = streamingData['adaptiveFormats'] as List? ?? [];
-            final mp4Urls = <String>[];
-            final webmUrls = <String>[];
-
-            for (final f in formats) {
-              final mime = f['mimeType'] as String? ?? '';
-              if (!mime.startsWith('audio/')) continue;
-              final directUrl = f['url'] as String?;
-              if (directUrl == null || directUrl.isEmpty) continue;
-
-              if (mime.contains('mp4')) {
-                mp4Urls.add(directUrl);
-              } else {
-                webmUrls.add(directUrl);
-              }
-            }
-
-            final candidates = [...mp4Urls, ...webmUrls];
-            if (candidates.isNotEmpty) {
-              debugPrint('[NewPipe Engine] Tier 1 ANDROID_VR resolved ${candidates.length} direct streams for $cleanId in <500ms');
-              return candidates;
-            }
-          }
-        }
-      }
-    } catch (_) {}
-    return [];
   }
 
   /// Smart YouTube metadata cleaner: extracts true song title, artist, and clean search query
@@ -228,14 +161,7 @@ class YouTubeImporterService {
       return List.from(cached.urls);
     }
 
-    // Tier 1: Direct InnerTube Android VR (Super-fast: 300-500ms, unciphered)
-    final direct = await _extractInnerTubeDirectStreams(cleanId);
-    if (direct.isNotEmpty) {
-      _streamCache[cleanId] = (urls: List.from(direct), cachedAt: DateTime.now());
-      return direct;
-    }
-
-    // Tier 2: Persistent YoutubeExplode (Handles ciphers/VEVO in ~800-1000ms with warm connection)
+    // Tier 1: Persistent YoutubeExplode (deciphers signatures and resolves in ~400-800ms with warm connection)
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(
         cleanId,
