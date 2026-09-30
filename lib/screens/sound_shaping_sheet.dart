@@ -251,6 +251,8 @@ class _BandSliderState extends State<_BandSlider> {
                 max: widget.maxDecibels,
                 onChanged: (val) {
                   setState(() => _gain = val);
+                },
+                onChangeEnd: (val) {
                   widget.onChanged(val);
                 },
               ),

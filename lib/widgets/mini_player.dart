@@ -30,11 +30,7 @@ class MiniPlayer extends StatelessWidget {
         player.stopPlayback();
       },
       child: GestureDetector(
-        onVerticalDragEnd: (details) {
-          if (details.primaryVelocity != null && details.primaryVelocity! > 250) {
-            player.stopPlayback();
-          }
-        },
+        behavior: HitTestBehavior.opaque,
         onLongPress: () {
           player.stopPlayback();
         },

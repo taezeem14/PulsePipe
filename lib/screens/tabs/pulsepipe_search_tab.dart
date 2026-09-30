@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -17,6 +18,23 @@ class PulsePipeSearchTab extends StatefulWidget {
 class _PulsePipeSearchTabState extends State<PulsePipeSearchTab> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   final List<GenreBrowseCardData> _browseCategories = const [
     GenreBrowseCardData(
@@ -92,13 +110,6 @@ class _PulsePipeSearchTabState extends State<PulsePipeSearchTab> {
       query: 'Acoustic',
     ),
   ];
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
 
   void _onCategoryTap(GenreBrowseCardData category, PlayerProvider player) {
     _controller.text = category.query;
@@ -211,20 +222,25 @@ class _PulsePipeSearchTabState extends State<PulsePipeSearchTab> {
                             contentPadding: EdgeInsets.zero,
                           ),
                           onChanged: (text) {
-                            player.search(text);
+                            if (_debounce?.isActive ?? false) _debounce!.cancel();
+                            _debounce = Timer(const Duration(milliseconds: 350), () {
+                              player.search(text);
+                            });
                             setState(() {});
                           },
                         ),
                       ),
                       if (_controller.text.isNotEmpty)
                         GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: () {
+                            _debounce?.cancel();
                             _controller.clear();
                             player.search('');
                             setState(() {});
                           },
                           child: Container(
-                            padding: const EdgeInsets.all(4),
+                            padding: const EdgeInsets.all(8),
                             child: const FaIcon(
                               FontAwesomeIcons.xmark,
                               size: 16,

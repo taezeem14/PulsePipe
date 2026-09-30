@@ -98,7 +98,9 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           _wasPlayingBeforeInterrupt = _player.playing;
           switch (event.type) {
             case AudioInterruptionType.duck:
-              _preDuckVolume = _player.volume;
+              if (_player.volume > 0.35) {
+                _preDuckVolume = _player.volume;
+              }
               _player.setVolume(0.35);
               break;
             case AudioInterruptionType.pause:
@@ -171,6 +173,14 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           bufferedPosition: _player.bufferedPosition,
           speed: _player.speed,
           queueIndex: event.currentIndex,
+        ),
+      );
+    }, onError: (Object e, StackTrace st) {
+      debugPrint('Playback event stream error: $e');
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.error,
+          playing: false,
         ),
       );
     });
@@ -301,6 +311,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
       bool started = false;
       for (final url in candidates) {
+        if (_currentSong?.id != targetSong.id) return; // Superseded by newer track selection
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         try {
           await _player.setUrl(
@@ -317,6 +328,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           debugPrint('Successfully playing "${song.title}" via: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
           break;
         } catch (e) {
+          if (_currentSong?.id != targetSong.id) return; // Abort if interruption was due to track skip
           debugPrint('Candidate stream failed for "${song.title}": $e. Trying next candidate...');
         }
       }

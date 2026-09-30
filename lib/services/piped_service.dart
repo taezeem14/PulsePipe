@@ -28,6 +28,7 @@ class PipedService {
   /// Returns a proxied audio URL that works on any network, or null if
   /// all instances fail.
   static Future<String?> getAudioStream(String videoId) async {
+    cleanCache();
     // Check cache first
     final cached = _cache[videoId];
     if (cached != null && DateTime.now().difference(cached.timestamp) < _cacheTtl) {

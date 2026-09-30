@@ -342,10 +342,15 @@ class PlayerProvider extends ChangeNotifier {
       }
     });
 
-    await _audioHandler.playSong(song);
-    _isLoadingStream = false;
-    notifyListeners();
-    _replenishQueueIfNeeded();
+    try {
+      await _audioHandler.playSong(song);
+    } catch (e) {
+      debugPrint('[PlayerProvider] playback init error: $e');
+    } finally {
+      _isLoadingStream = false;
+      notifyListeners();
+      _replenishQueueIfNeeded();
+    }
   }
 
   Future<void> _loadLyrics(Song song) async {
@@ -465,7 +470,7 @@ class PlayerProvider extends ChangeNotifier {
     if (_currentIndex > 0) {
       _currentIndex--;
       notifyListeners();
-      await playSong(_queue[_currentIndex]);
+      await playSong(_queue[_currentIndex], isAutoAdvance: true);
     } else {
       await seek(Duration.zero);
     }
@@ -497,14 +502,16 @@ class PlayerProvider extends ChangeNotifier {
 
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
-    if (_isShuffle && _queue.length > 1) {
+    if (_isShuffle) {
       _unshuffledQueue = List.from(_queue);
-      final cur = currentSong;
-      _queue.shuffle();
-      if (cur != null) {
-        _queue.remove(cur);
-        _queue.insert(0, cur);
-        _currentIndex = 0;
+      if (_queue.length > 1) {
+        final cur = currentSong;
+        _queue.shuffle();
+        if (cur != null) {
+          _queue.remove(cur);
+          _queue.insert(0, cur);
+          _currentIndex = 0;
+        }
       }
     } else if (!_isShuffle && _unshuffledQueue.isNotEmpty) {
       final cur = currentSong;
@@ -616,6 +623,9 @@ class PlayerProvider extends ChangeNotifier {
       importMediaUrl(trimmed).then((msg) {
         _isSearching = false;
         notifyListeners();
+      }).catchError((e) {
+        _isSearching = false;
+        notifyListeners();
       });
       return;
     }
@@ -674,7 +684,7 @@ class PlayerProvider extends ChangeNotifier {
         stopPlayback();
       } else {
         _currentIndex = _currentIndex.clamp(0, _queue.length - 1);
-        playSong(_queue[_currentIndex]);
+        playSong(_queue[_currentIndex], isAutoAdvance: true);
       }
     } else if (index < _currentIndex) {
       _currentIndex--;
@@ -685,15 +695,19 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _queue.length || newIndex < 0 || newIndex > _queue.length) return;
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
-    final cur = currentSong;
     final item = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, item);
 
-    if (cur != null) {
-      _currentIndex = _queue.indexOf(cur);
+    if (_currentIndex == oldIndex) {
+      _currentIndex = newIndex;
+    } else if (_currentIndex > oldIndex && _currentIndex <= newIndex) {
+      _currentIndex--;
+    } else if (_currentIndex < oldIndex && _currentIndex >= newIndex) {
+      _currentIndex++;
     }
     notifyListeners();
   }
