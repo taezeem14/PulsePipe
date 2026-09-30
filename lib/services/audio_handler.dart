@@ -5,7 +5,6 @@ import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import 'stream_resolver_service.dart';
-import 'sponsorblock_service.dart';
 import 'youtube_importer_service.dart';
 
 
@@ -55,18 +54,15 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   double _bassBoost = 0.0;
   String _currentPreset = 'Flat';
 
-  List<SponsorSegment> _activeSponsorSegments = [];
-  bool _isSkippingSponsor = false;
-
   EmberAudioHandler() {
     _player = AudioPlayer(
       audioLoadConfiguration: const AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
-          minBufferDuration: Duration(milliseconds: 1500),
-          maxBufferDuration: Duration(seconds: 20),
-          bufferForPlaybackDuration: Duration(milliseconds: 200),
-          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 800),
-          backBufferDuration: Duration(seconds: 5),
+          minBufferDuration: Duration(milliseconds: 2500),
+          maxBufferDuration: Duration(seconds: 30),
+          bufferForPlaybackDuration: Duration(milliseconds: 500),
+          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 1500),
+          backBufferDuration: Duration(seconds: 10),
         ),
         darwinLoadControl: DarwinLoadControl(
           automaticallyWaitsToMinimizeStalling: false,
@@ -190,28 +186,6 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
     });
 
-    // SponsorBlock: auto-skip promotional/intro segments during YouTube playback
-    _player.positionStream.listen((pos) {
-      if (_activeSponsorSegments.isNotEmpty && !_isSkippingSponsor) {
-        final currentSec = pos.inMilliseconds / 1000.0;
-        // Never seek in the first 12 seconds to prevent stalling initial playback
-        if (currentSec < 12.0) return;
-        for (final segment in _activeSponsorSegments) {
-          if (segment.start < 12.0) continue;
-          if (currentSec >= segment.start && currentSec < (segment.end - 0.3)) {
-            _isSkippingSponsor = true;
-            debugPrint('SponsorBlock: auto-skipping ${segment.category} [${segment.start}s - ${segment.end}s]');
-            final seekTarget = Duration(milliseconds: (segment.end * 1000).toInt() + 150);
-            _player.seek(seekTarget).then((_) {
-              _isSkippingSponsor = false;
-            }).catchError((_) {
-              _isSkippingSponsor = false;
-            });
-            break;
-          }
-        }
-      }
-    });
   }
 
   Future<void> playSong(Song song) async {
@@ -219,29 +193,6 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _currentTrackActive = false;
     _completionHandled = true;
     _currentSong = song;
-    _activeSponsorSegments = [];
-    _isSkippingSponsor = false;
-
-    // Query SponsorBlock skip segments deferred (after 3s) so initial audio gets 100% bandwidth
-    Future.delayed(const Duration(seconds: 3), () {
-      if (_currentSong?.id != song.id) return;
-      String? ytVideoId;
-      if (song.id.startsWith('yt_')) {
-        ytVideoId = song.id.substring(3);
-      } else {
-        ytVideoId = YouTubeImporterService.extractVideoId(song.streamUrl);
-      }
-      if (ytVideoId != null && ytVideoId.isNotEmpty) {
-        SponsorBlockService.instance.getSkipSegments(ytVideoId).then((segments) {
-          if (_currentSong?.id == song.id) {
-            _activeSponsorSegments = segments;
-            if (segments.isNotEmpty) {
-              debugPrint('SponsorBlock: Loaded ${segments.length} skip segments for YouTube video $ytVideoId');
-            }
-          }
-        }).catchError((_) {});
-      }
-    });
     mediaItem.add(
       MediaItem(
         id: song.id,
@@ -307,6 +258,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             url,
             headers: const {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Encoding': 'identity',
             },
             initialPosition: Duration.zero,
             preload: true,

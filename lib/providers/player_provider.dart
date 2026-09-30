@@ -578,6 +578,9 @@ class PlayerProvider extends ChangeNotifier {
       _currentIndex = startIndex.clamp(0, _queue.length - 1);
     }
     notifyListeners();
+    if (_currentIndex + 1 < _queue.length) {
+      StreamResolverService.preloadSongs(_queue.sublist(_currentIndex + 1), maxCount: 15);
+    }
     await playSong(_queue[_currentIndex]);
   }
 
