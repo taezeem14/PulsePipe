@@ -62,15 +62,15 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _player = AudioPlayer(
       audioLoadConfiguration: const AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
-          minBufferDuration: Duration(seconds: 4),
-          maxBufferDuration: Duration(seconds: 30),
-          bufferForPlaybackDuration: Duration(milliseconds: 500),
-          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 1500),
+          minBufferDuration: Duration(milliseconds: 1500),
+          maxBufferDuration: Duration(seconds: 20),
+          bufferForPlaybackDuration: Duration(milliseconds: 200),
+          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 800),
           backBufferDuration: Duration(seconds: 5),
         ),
         darwinLoadControl: DarwinLoadControl(
-          automaticallyWaitsToMinimizeStalling: true,
-          preferredForwardBufferDuration: Duration(seconds: 10),
+          automaticallyWaitsToMinimizeStalling: false,
+          preferredForwardBufferDuration: Duration(seconds: 3),
         ),
       ),
       audioPipeline: AudioPipeline(
@@ -302,16 +302,8 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       for (final url in candidates) {
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         try {
-          Map<String, String>? headers;
-          if (url.contains('googlevideo.com') || url.contains('youtube') || url.contains('youtu.be')) {
-            headers = {
-              'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-            };
-          }
-
           await _player.setUrl(
             url,
-            headers: headers,
             initialPosition: Duration.zero,
             preload: true,
           );

@@ -13,11 +13,9 @@ class PipedService {
   PipedService._();
 
   static const _instances = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.adminforge.de',
     'https://pipedapi.in.projectsegfau.lt',
-    'https://api.piped.privacydev.net',
-    'https://pipedapi.leptons.xyz',
+    'https://pipedapi.ducks.party',
+    'https://pipedapi.drgns.space',
   ];
 
   /// Cache resolved streams for 3 hours (googlevideo URLs expire ~6h,
@@ -41,7 +39,7 @@ class PipedService {
         final url = Uri.parse('$instance/streams/$videoId');
         final resp = await http.get(url, headers: {
           'Accept': 'application/json',
-        }).timeout(const Duration(seconds: 6));
+        }).timeout(const Duration(milliseconds: 2000));
 
         if (resp.statusCode != 200) continue;
 

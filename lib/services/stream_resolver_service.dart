@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import 'youtube_importer_service.dart';
-import 'piped_service.dart';
 
 class StreamResolverService {
   static final Map<String, ({List<String> streams, DateTime cachedAt})> _resolvedCache = {};
@@ -78,20 +77,7 @@ class StreamResolverService {
           return streams;
         }
       } catch (e) {
-        debugPrint('[NewPipe Engine] Direct extraction error for $videoId: $e. Trying Piped fallback...');
-      }
-
-      // Piped failover
-      try {
-        final pipedUrl = await PipedService.getAudioStream(videoId);
-        if (pipedUrl != null && pipedUrl.isNotEmpty) {
-          debugPrint('[NewPipe Engine] Piped fallback stream resolved for "${song.title}"');
-          final list = [pipedUrl];
-          _resolvedCache[cacheKey] = (streams: list, cachedAt: DateTime.now());
-          return list;
-        }
-      } catch (e) {
-        debugPrint('[NewPipe Engine] Piped failover error: $e');
+        debugPrint('[NewPipe Engine] Direct extraction error for $videoId: $e');
       }
     }
 

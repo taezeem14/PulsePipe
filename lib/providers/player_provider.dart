@@ -278,6 +278,13 @@ class PlayerProvider extends ChangeNotifier {
     if (_currentIndex + 1 < _queue.length) {
       final next = _queue[_currentIndex + 1];
       StreamResolverService.prefetchPlayableStreams(next);
+      if (_currentIndex + 2 < _queue.length) {
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          if (_currentIndex + 2 < _queue.length) {
+            StreamResolverService.prefetchPlayableStreams(_queue[_currentIndex + 2]);
+          }
+        });
+      }
     } else if (_isAutoplayEnabled && _recommendations.isNotEmpty) {
       StreamResolverService.prefetchPlayableStreams(_recommendations.first);
     }
@@ -331,10 +338,10 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
     _loadLyrics(song);
     _loadRecommendations(song);
+    _prefetchNextTrack();
     await _audioHandler.playSong(song);
     _isLoadingStream = false;
     notifyListeners();
-    _prefetchNextTrack();
     _replenishQueueIfNeeded();
   }
 
@@ -741,6 +748,9 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> playPlaylist(Playlist playlist) async {
     if (playlist.songs.isNotEmpty) {
       _consecutiveStreamFailures = 0;
+      if (playlist.songs.length > 1) {
+        StreamResolverService.prefetchPlayableStreams(playlist.songs[1]);
+      }
       await playSong(playlist.songs.first, contextQueue: playlist.songs);
     }
   }
