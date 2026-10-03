@@ -31,24 +31,32 @@ class StreamResolverService {
     });
   }
 
-  /// Proactively preloads upcoming tracks sequentially in the background
-  /// (with a safe delay so active playback has 100% network bandwidth)
-  static void preloadSongs(List<Song> songs, {int maxCount = 5}) {
+  /// Proactively preloads an entire list of songs in parallel background batches
+  /// (e.g. all songs in a playlist, top trending, or search results)
+  static void preloadSongs(List<Song> songs, {int maxCount = 15}) {
     final targets = songs.take(maxCount).where((s) => !isPreloaded(s) && !_currentlyPreloading.contains(s.id)).toList();
     if (targets.isEmpty) return;
 
-    Future.delayed(const Duration(milliseconds: 2500), () async {
-      for (final song in targets) {
-        if (isPreloaded(song)) continue;
-        _currentlyPreloading.add(song.id);
-        try {
-          await resolvePlayableStreamCandidates(song);
-          await Future.delayed(const Duration(milliseconds: 600));
-        } catch (e) {
-          debugPrint('[StreamResolverService] Preload error for "${song.title}": $e');
-        } finally {
-          _currentlyPreloading.remove(song.id);
+    Future.microtask(() async {
+      // Process in concurrent batches of 3 to resolve quickly without network choking
+      const batchSize = 3;
+      for (int i = 0; i < targets.length; i += batchSize) {
+        final end = (i + batchSize < targets.length) ? i + batchSize : targets.length;
+        final batch = targets.sublist(i, end);
+        for (final s in batch) {
+          _currentlyPreloading.add(s.id);
         }
+        await Future.wait(
+          batch.map((song) async {
+            try {
+              await resolvePlayableStreamCandidates(song);
+            } catch (e) {
+              debugPrint('[StreamResolverService] Batch preload error for "${song.title}": $e');
+            } finally {
+              _currentlyPreloading.remove(song.id);
+            }
+          }),
+        );
       }
     });
   }

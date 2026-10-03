@@ -275,20 +275,11 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void _prefetchNextTrack() {
-    final capturedSongId = currentSong?.id;
     if (_currentIndex + 1 < _queue.length) {
-      final nextSong = _queue[_currentIndex + 1];
-      StreamResolverService.prefetchPlayableStreams(nextSong);
-      if (_currentIndex + 2 < _queue.length) {
-        Future.delayed(const Duration(seconds: 4), () {
-          // Only prefetch N+2 if the same song is still playing (user hasn't skipped)
-          if (currentSong?.id == capturedSongId && _currentIndex + 2 < _queue.length) {
-            StreamResolverService.prefetchPlayableStreams(_queue[_currentIndex + 2]);
-          }
-        });
-      }
+      final upcoming = _queue.sublist(_currentIndex + 1);
+      StreamResolverService.preloadSongs(upcoming, maxCount: 12);
     } else if (_isAutoplayEnabled && _recommendations.isNotEmpty) {
-      StreamResolverService.prefetchPlayableStreams(_recommendations.first);
+      StreamResolverService.preloadSongs(_recommendations, maxCount: 6);
     }
   }
 
@@ -304,7 +295,7 @@ class PlayerProvider extends ChangeNotifier {
           if (newTracks.isNotEmpty) {
             _queue.addAll(newTracks);
             notifyListeners();
-            StreamResolverService.preloadSongs(newTracks, maxCount: 4);
+            StreamResolverService.preloadSongs(newTracks, maxCount: 8);
           }
         } catch (_) {}
       }
@@ -340,12 +331,8 @@ class PlayerProvider extends ChangeNotifier {
     _isLoadingStream = true;
     notifyListeners();
 
-    // Defer next-track prefetching by 2 seconds so current track gets 100% bandwidth for zero-delay start
-    Future.delayed(const Duration(seconds: 2), () {
-      if (currentSong?.id == song.id) {
-        _prefetchNextTrack();
-      }
-    });
+    // Start proactive background preloading for the rest of the queue
+    _prefetchNextTrack();
 
     // Defer non-critical auxiliary metadata tasks so audio stream has 100% network priority
     Future.microtask(() {
@@ -590,7 +577,6 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0, Song? targetSong}) async {
     final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
     if (validTracks.isEmpty) return;
-    _consecutiveStreamFailures = 0;
     _queue = List.from(validTracks);
     if (targetSong != null) {
       final targetIdx = _queue.indexWhere((s) => s.id == targetSong.id);
@@ -780,6 +766,10 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> playPlaylist(Playlist playlist) async {
     if (playlist.songs.isNotEmpty) {
       _consecutiveStreamFailures = 0;
+      // Proactively preload the entire playlist so playback is gapless & seamless
+      if (playlist.songs.length > 1) {
+        StreamResolverService.preloadSongs(playlist.songs.sublist(1), maxCount: 20);
+      }
       await playSong(playlist.songs.first, contextQueue: playlist.songs);
     }
   }

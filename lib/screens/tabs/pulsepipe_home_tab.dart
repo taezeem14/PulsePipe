@@ -220,10 +220,7 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
                       itemCount: player.youtubeTracks.length,
                       itemBuilder: (context, index) {
                         final track = player.youtubeTracks[index];
-                        return _buildTrackCarouselCard(
-                          track,
-                          () => player.playSong(track, contextQueue: player.youtubeTracks),
-                        );
+                        return _buildTrackCarouselCard(track, () => player.playSong(track));
                       },
                     ),
             ),
@@ -332,7 +329,7 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
                           ),
                         ],
                       ),
-                      onTap: () => player.playSong(track, contextQueue: player.youtubeTracks),
+                      onTap: () => player.playSong(track),
                     ),
                   );
                 },

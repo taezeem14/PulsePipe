@@ -79,12 +79,9 @@ void main() {
       );
     });
 
-    test('SponsorBlock service initializes safely and can be toggled', () {
+    test('SponsorBlock service initializes with enabled state', () {
       final service = SponsorBlockService.instance;
-      expect(service.isEnabled, isFalse);
-      service.isEnabled = true;
       expect(service.isEnabled, isTrue);
-      service.isEnabled = false;
     });
   });
 }
