@@ -275,12 +275,14 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void _prefetchNextTrack() {
+    final capturedSongId = currentSong?.id;
     if (_currentIndex + 1 < _queue.length) {
       final nextSong = _queue[_currentIndex + 1];
       StreamResolverService.prefetchPlayableStreams(nextSong);
       if (_currentIndex + 2 < _queue.length) {
         Future.delayed(const Duration(seconds: 4), () {
-          if (_currentIndex + 2 < _queue.length) {
+          // Only prefetch N+2 if the same song is still playing (user hasn't skipped)
+          if (currentSong?.id == capturedSongId && _currentIndex + 2 < _queue.length) {
             StreamResolverService.prefetchPlayableStreams(_queue[_currentIndex + 2]);
           }
         });
@@ -588,6 +590,7 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0, Song? targetSong}) async {
     final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
     if (validTracks.isEmpty) return;
+    _consecutiveStreamFailures = 0;
     _queue = List.from(validTracks);
     if (targetSong != null) {
       final targetIdx = _queue.indexWhere((s) => s.id == targetSong.id);
@@ -596,7 +599,7 @@ class PlayerProvider extends ChangeNotifier {
       _currentIndex = startIndex.clamp(0, _queue.length - 1);
     }
     notifyListeners();
-    await playSong(_queue[_currentIndex], isAutoAdvance: true);
+    await playSong(_queue[_currentIndex]);
   }
 
   void addTracksToQueue(List<Song> tracks) {

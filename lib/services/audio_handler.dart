@@ -45,7 +45,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   ValueChanged<Song>? _onPlaybackFailed;
 
   /// Guard to prevent ProcessingState.completed from firing _onCompleted
-  /// multiple times or prematurely during loading/transitioning
+  /// multiple times or prematurely during loading/transitioning.
   bool _completionHandled = true;
   bool _currentTrackActive = false;
   bool _wasPlayingBeforeInterrupt = false;
@@ -185,7 +185,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       );
     });
 
-    // Auto-advance when song finishes (guarded to fire only when track genuinely started and completed playback)
+    // Auto-advance when song finishes (guarded by near-end completion check to prevent premature track skipping)
     _player.playerStateStream.listen((state) {
       if (state.playing && state.processingState == ProcessingState.ready) {
         _currentTrackActive = true;
@@ -193,6 +193,15 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
 
       if (state.processingState == ProcessingState.completed && _currentTrackActive && !_completionHandled) {
+        final total = _player.duration;
+        final pos = _player.position;
+        // Verify track genuinely finished: position must be close to total duration
+        final isNearEnd = total != null && total.inSeconds > 5 && pos.inSeconds >= (total.inSeconds - 4);
+        if (!isNearEnd && (total != null && total.inSeconds > 10)) {
+          debugPrint('[AudioHandler] Premature completion event ignored (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
+          return;
+        }
+
         _currentTrackActive = false;
         _completionHandled = true;
         debugPrint('[AudioHandler] Track "${_currentSong?.title}" completed playback cleanly. Invoking onCompleted.');
@@ -200,17 +209,20 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
     });
 
-    // SponsorBlock: auto-skip promotional/intro segments during YouTube playback
+    // SponsorBlock: auto-skip promotional segments ONLY when enabled (strictly never intro/outro that cuts songs)
     _player.positionStream.listen((pos) {
+      if (!SponsorBlockService.instance.isEnabled) return;
       if (_activeSponsorSegments.isNotEmpty && !_isSkippingSponsor) {
         final currentSec = pos.inMilliseconds / 1000.0;
-        // Never seek in the first 12 seconds to prevent stalling initial playback
-        if (currentSec < 12.0) return;
+        if (currentSec < 15.0) return;
+        final totalDur = _player.duration;
         for (final segment in _activeSponsorSegments) {
-          if (segment.start < 12.0) continue;
-          if (currentSec >= segment.start && currentSec < (segment.end - 0.3)) {
+          if (segment.category != 'sponsor') continue; // NEVER skip intros or outros on music
+          if (segment.start < 15.0) continue;
+          if (totalDur != null && segment.end >= totalDur.inSeconds - 10) continue;
+          if (currentSec >= segment.start && currentSec < (segment.end - 0.5)) {
             _isSkippingSponsor = true;
-            debugPrint('SponsorBlock: auto-skipping ${segment.category} [${segment.start}s - ${segment.end}s]');
+            debugPrint('SponsorBlock: auto-skipping sponsor ad [${segment.start}s - ${segment.end}s]');
             final seekTarget = Duration(milliseconds: (segment.end * 1000).toInt() + 150);
             _player.seek(seekTarget).then((_) {
               _isSkippingSponsor = false;
@@ -231,6 +243,12 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _currentSong = song;
     _activeSponsorSegments = [];
     _isSkippingSponsor = false;
+
+    // Stop the player to flush the old source's ExoPlayer pipeline events
+    // (prevents stale ProcessingState.completed from the previous song)
+    try {
+      await _player.stop();
+    } catch (_) {}
 
     // Query SponsorBlock skip segments deferred (after 3s) so initial audio gets 100% bandwidth
     Future.delayed(const Duration(seconds: 3), () {
@@ -318,7 +336,6 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             url,
             headers: const {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept-Encoding': 'identity',
             },
             initialPosition: Duration.zero,
             preload: true,

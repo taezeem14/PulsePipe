@@ -17,7 +17,8 @@ class SponsorBlockService {
   static final SponsorBlockService instance = SponsorBlockService._();
   SponsorBlockService._();
 
-  bool isEnabled = true;
+  // Disabled by default for music playback to prevent community intro/outro markers from clipping tracks
+  bool isEnabled = false;
 
   // Cache segment results by stream ID
   final Map<String, List<SponsorSegment>> _segmentCache = {};
@@ -30,8 +31,9 @@ class SponsorBlockService {
     }
 
     try {
+      // Query strictly paid sponsorship ads — NEVER intro or outro for music tracks
       final uri = Uri.parse(
-        'https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=["sponsor","intro","outro","selfpromo"]',
+        'https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=["sponsor"]',
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 4));
 
