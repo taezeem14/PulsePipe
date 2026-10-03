@@ -166,19 +166,10 @@ class YouTubeImporterService {
       final manifest = await _yt.videos.streamsClient.getManifest(
         cleanId,
         requireWatchPage: false,
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 8));
       final candidates = <String>[];
 
-      // 1. MP4 / AAC audio streams sorted by highest bitrate first
-      final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
-      if (mp4Audio.isNotEmpty) {
-        mp4Audio.sort((a, b) => b.bitrate.compareTo(a.bitrate));
-        for (final s in mp4Audio) {
-          candidates.add(s.url.toString());
-        }
-      }
-
-      // 2. WebM / Opus audio streams sorted by highest bitrate first
+      // 1. WebM / Opus audio streams sorted by highest bitrate first (NewPipe standard: zero-latency EBML start)
       final webmAudio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'webm').toList();
       if (webmAudio.isNotEmpty) {
         webmAudio.sort((a, b) => b.bitrate.compareTo(a.bitrate));
@@ -187,10 +178,13 @@ class YouTubeImporterService {
         }
       }
 
-      // 3. Muxed MP4 fallback
-      final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
-      if (muxedMp4.isNotEmpty) {
-        candidates.add(muxedMp4.withHighestBitrate().url.toString());
+      // 2. MP4 / AAC audio-only fallback
+      final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+      if (mp4Audio.isNotEmpty) {
+        mp4Audio.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+        for (final s in mp4Audio) {
+          candidates.add(s.url.toString());
+        }
       }
 
       if (candidates.isNotEmpty) {

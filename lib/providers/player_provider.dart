@@ -276,10 +276,17 @@ class PlayerProvider extends ChangeNotifier {
 
   void _prefetchNextTrack() {
     if (_currentIndex + 1 < _queue.length) {
-      final upcoming = _queue.sublist(_currentIndex + 1);
-      StreamResolverService.preloadSongs(upcoming, maxCount: 12);
+      final nextSong = _queue[_currentIndex + 1];
+      StreamResolverService.prefetchPlayableStreams(nextSong);
+      if (_currentIndex + 2 < _queue.length) {
+        Future.delayed(const Duration(seconds: 4), () {
+          if (_currentIndex + 2 < _queue.length) {
+            StreamResolverService.prefetchPlayableStreams(_queue[_currentIndex + 2]);
+          }
+        });
+      }
     } else if (_isAutoplayEnabled && _recommendations.isNotEmpty) {
-      StreamResolverService.preloadSongs(_recommendations, maxCount: 6);
+      StreamResolverService.prefetchPlayableStreams(_recommendations.first);
     }
   }
 
@@ -295,7 +302,7 @@ class PlayerProvider extends ChangeNotifier {
           if (newTracks.isNotEmpty) {
             _queue.addAll(newTracks);
             notifyListeners();
-            StreamResolverService.preloadSongs(newTracks, maxCount: 8);
+            StreamResolverService.preloadSongs(newTracks, maxCount: 4);
           }
         } catch (_) {}
       }
@@ -331,8 +338,12 @@ class PlayerProvider extends ChangeNotifier {
     _isLoadingStream = true;
     notifyListeners();
 
-    // Start proactive background preloading for the rest of the queue
-    _prefetchNextTrack();
+    // Defer next-track prefetching by 2 seconds so current track gets 100% bandwidth for zero-delay start
+    Future.delayed(const Duration(seconds: 2), () {
+      if (currentSong?.id == song.id) {
+        _prefetchNextTrack();
+      }
+    });
 
     // Defer non-critical auxiliary metadata tasks so audio stream has 100% network priority
     Future.microtask(() {
@@ -585,7 +596,7 @@ class PlayerProvider extends ChangeNotifier {
       _currentIndex = startIndex.clamp(0, _queue.length - 1);
     }
     notifyListeners();
-    await playSong(_queue[_currentIndex]);
+    await playSong(_queue[_currentIndex], isAutoAdvance: true);
   }
 
   void addTracksToQueue(List<Song> tracks) {
@@ -766,10 +777,6 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> playPlaylist(Playlist playlist) async {
     if (playlist.songs.isNotEmpty) {
       _consecutiveStreamFailures = 0;
-      // Proactively preload the entire playlist so playback is gapless & seamless
-      if (playlist.songs.length > 1) {
-        StreamResolverService.preloadSongs(playlist.songs.sublist(1), maxCount: 20);
-      }
       await playSong(playlist.songs.first, contextQueue: playlist.songs);
     }
   }

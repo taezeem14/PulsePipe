@@ -62,11 +62,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _player = AudioPlayer(
       audioLoadConfiguration: const AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
-          minBufferDuration: Duration(milliseconds: 1500),
-          maxBufferDuration: Duration(seconds: 20),
-          bufferForPlaybackDuration: Duration(milliseconds: 200),
-          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 800),
-          backBufferDuration: Duration(seconds: 5),
+          minBufferDuration: Duration(milliseconds: 2500),
+          maxBufferDuration: Duration(seconds: 30),
+          bufferForPlaybackDuration: Duration(milliseconds: 500),
+          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 1500),
+          backBufferDuration: Duration(seconds: 10),
         ),
         darwinLoadControl: DarwinLoadControl(
           automaticallyWaitsToMinimizeStalling: false,
@@ -318,6 +318,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             url,
             headers: const {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Encoding': 'identity',
             },
             initialPosition: Duration.zero,
             preload: true,
