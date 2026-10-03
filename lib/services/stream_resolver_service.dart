@@ -1,9 +1,16 @@
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import 'youtube_importer_service.dart';
-
 class StreamResolverService {
+  static const int _maxCacheEntries = 100;
   static final Map<String, ({List<String> streams, DateTime cachedAt})> _resolvedCache = {};
+
+  static void _cacheStreams(String key, List<String> streams) {
+    if (_resolvedCache.length >= _maxCacheEntries) {
+      _resolvedCache.remove(_resolvedCache.keys.first);
+    }
+    _resolvedCache[key] = (streams: streams, cachedAt: DateTime.now());
+  }
 
   /// Invalidate cached stream candidates for a song if playback fails
   static void invalidateCache(String key) {
@@ -116,7 +123,7 @@ class StreamResolverService {
         final streams = await YouTubeImporterService.getAudioStreamUrls(videoId);
         if (streams.isNotEmpty) {
           debugPrint('[NewPipe Engine] Resolved ${streams.length} direct YouTube audio streams for "${song.title}"');
-          _resolvedCache[cacheKey] = (streams: streams, cachedAt: DateTime.now());
+          _cacheStreams(cacheKey, streams);
           return streams;
         }
       } catch (e) {
@@ -139,7 +146,7 @@ class StreamResolverService {
           final streams = await YouTubeImporterService.getAudioStreamUrls(matchVideoId);
           if (streams.isNotEmpty) {
             debugPrint('[NewPipe Engine] Dynamic search resolved ${streams.length} streams for "$query"');
-            _resolvedCache[cacheKey] = (streams: streams, cachedAt: DateTime.now());
+            _cacheStreams(cacheKey, streams);
             return streams;
           }
         }

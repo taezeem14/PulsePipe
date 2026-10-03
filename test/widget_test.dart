@@ -83,5 +83,46 @@ void main() {
       final service = SponsorBlockService.instance;
       expect(service.isEnabled, isTrue);
     });
+
+    test('Song.fromMap defensively parses heterogeneous data types without crashing', () {
+      final dynamicMap = <String, dynamic>{
+        'id': 12345, // int instead of String
+        'title': 'Test Song',
+        'artist': 'Test Artist',
+        'duration_ms': '210000', // String instead of int
+        'artwork_url': 'https://example.com/art.jpg',
+        'stream_url': 'https://example.com/audio.mp3',
+        'is_favorite': 1, // int 1 instead of boolean
+      };
+
+      final parsed = Song.fromMap(dynamicMap);
+      expect(parsed.id, '12345');
+      expect(parsed.duration.inMilliseconds, 210000);
+      expect(parsed.isFavorite, isTrue);
+    });
+
+    test('Playlist.fromMap parses Map<dynamic, dynamic> without dropping tracks', () {
+      final rawPlaylistMap = <dynamic, dynamic>{
+        'id': 'pl_test',
+        'title': 'Dynamic Test',
+        'description': 'Description',
+        'songs': [
+          <dynamic, dynamic>{
+            'id': 's1',
+            'title': 'Track One',
+            'artist': 'Artist One',
+            'duration_ms': 180000,
+            'artwork_url': '',
+            'stream_url': 'https://example.com/1.mp3',
+          }
+        ],
+        'createdAt': '2026-10-03T20:00:00.000Z',
+      };
+
+      final pl = Playlist.fromMap(Map<String, dynamic>.from(rawPlaylistMap));
+      expect(pl.title, 'Dynamic Test');
+      expect(pl.songs.length, 1);
+      expect(pl.songs.first.title, 'Track One');
+    });
   });
 }

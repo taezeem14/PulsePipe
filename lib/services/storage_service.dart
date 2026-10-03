@@ -57,7 +57,9 @@ class StorageService {
     final cleaned = raw
         .map((s) {
           try {
-            final song = Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            final decoded = jsonDecode(s);
+            if (decoded is! Map) return null;
+            final song = Song.fromMap(Map<String, dynamic>.from(decoded));
             return Song.isPlaceholder(song) ? null : song;
           } catch (_) {
             return null;
@@ -95,7 +97,9 @@ class StorageService {
     final cleaned = raw
         .map((s) {
           try {
-            final song = Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            final decoded = jsonDecode(s);
+            if (decoded is! Map) return null;
+            final song = Song.fromMap(Map<String, dynamic>.from(decoded));
             return Song.isPlaceholder(song) ? null : song;
           } catch (_) {
             return null;
@@ -140,7 +144,9 @@ class StorageService {
     final list = <Playlist>[];
     for (final s in raw) {
       try {
-        final pl = Playlist.fromMap(jsonDecode(s) as Map<String, dynamic>);
+        final decoded = jsonDecode(s);
+        if (decoded is! Map) continue;
+        final pl = Playlist.fromMap(Map<String, dynamic>.from(decoded));
         final sanitizedSongs = pl.songs.where((song) => !Song.isPlaceholder(song)).toList();
         list.add(pl.copyWith(songs: sanitizedSongs));
       } catch (_) {}
@@ -204,7 +210,9 @@ class StorageService {
     final cleaned = raw
         .map((s) {
           try {
-            final song = Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            final decoded = jsonDecode(s);
+            if (decoded is! Map) return null;
+            final song = Song.fromMap(Map<String, dynamic>.from(decoded));
             return Song.isPlaceholder(song) ? null : song;
           } catch (_) {
             return null;
@@ -266,8 +274,11 @@ class StorageService {
     final raw = _prefs?.getString(_eqBandGainsKey);
     if (raw == null) return {};
     try {
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.map((k, v) => MapEntry(int.parse(k), (v as num).toDouble()));
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(int.parse(k.toString()), (v as num).toDouble()));
+      }
+      return {};
     } catch (_) {
       return {};
     }

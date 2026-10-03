@@ -259,9 +259,8 @@ class TrackOptionsSheet extends StatelessWidget {
 
               subtitle: 'Save track into custom playlist',
               onTap: () {
-                final parentContext = Navigator.of(context).context;
                 Navigator.pop(context);
-                _showAddToPlaylistDialog(parentContext, player);
+                _showAddToPlaylistDialog(context, player);
               },
             ),
             _OptionTile(
@@ -270,18 +269,17 @@ class TrackOptionsSheet extends StatelessWidget {
               title: isDownloaded ? 'Downloaded (Offline Ready)' : 'Download Audio (MP3)',
               subtitle: 'Save high-bitrate audio to Downloads/Music',
               onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
                 if (!isDownloaded) {
-                  messenger.showSnackBar(
+                  ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       backgroundColor: EmberColors.surfaceContainerHigh,
                       content: Text('Downloading "${song.title}" MP3...', style: const TextStyle(color: EmberColors.primaryAmber)),
                     ),
                   );
                   final path = await player.downloadAudio(song);
-                  if (path != null) {
-                    messenger.showSnackBar(
+                  if (path != null && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         backgroundColor: EmberColors.surfaceContainerHigh,
                         content: Text('Saved to Downloads/Ember!', style: TextStyle(color: EmberColors.primaryAmberHi)),
@@ -296,17 +294,16 @@ class TrackOptionsSheet extends StatelessWidget {
               title: 'Download Video (MP4)',
               subtitle: 'Save HD video directly to device Gallery/Movies',
               onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
-                messenger.showSnackBar(
+                ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     backgroundColor: EmberColors.surfaceContainerHigh,
                     content: Text('Downloading MP4 video for "${song.title}"...', style: const TextStyle(color: EmberColors.primaryAmber)),
                   ),
                 );
                 final path = await player.downloadVideo(song);
-                if (path != null) {
-                  messenger.showSnackBar(
+                if (path != null && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       backgroundColor: EmberColors.surfaceContainerHigh,
                       content: Text('Video saved to Gallery / Movies!', style: TextStyle(color: EmberColors.primaryAmberHi)),

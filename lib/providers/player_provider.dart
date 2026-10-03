@@ -54,6 +54,7 @@ class PlayerProvider extends ChangeNotifier {
   LyricsResult _lyrics = LyricsResult.empty;
   bool _isLoadingLyrics = false;
   bool _isLoadingStream = false;
+  int _playSessionId = 0;
 
   Timer? _sleepTimer;
   int _sleepSecondsRemaining = 0;
@@ -152,8 +153,8 @@ class PlayerProvider extends ChangeNotifier {
         _consecutiveStreamFailures++;
         StreamResolverService.invalidateCache(failedSong.id);
         YouTubeImporterService.invalidateCache(failedSong.id);
-        if (_consecutiveStreamFailures < _maxConsecutiveFailures && _queue.isNotEmpty && _currentIndex < _queue.length - 1) {
-          debugPrint('[PlayerProvider] Automatically skipping to next track in queue after stream failure...');
+        if (_consecutiveStreamFailures < _maxConsecutiveFailures && _queue.isNotEmpty && (_currentIndex < _queue.length - 1 || _isAutoplayEnabled)) {
+          debugPrint('[PlayerProvider] Automatically skipping to next track after stream failure...');
           skipNext(isAuto: true);
         } else {
           _isPlaying = false;
@@ -188,10 +189,17 @@ class PlayerProvider extends ChangeNotifier {
     // Load initial trending discovery tracks
     _loadInitialDiscoveryTracks();
 
-    // Listen to player streams
+    // Listen to player streams with throttled position notifications to prevent UI jank
+    int lastNotifiedSec = -1;
+    DateTime lastNotifyTime = DateTime.fromMillisecondsSinceEpoch(0);
     _posSub = _audioHandler.player.positionStream.listen((pos) {
       _position = pos;
-      notifyListeners();
+      final now = DateTime.now();
+      if (pos.inSeconds != lastNotifiedSec || now.difference(lastNotifyTime).inMilliseconds >= 300) {
+        lastNotifiedSec = pos.inSeconds;
+        lastNotifyTime = now;
+        notifyListeners();
+      }
     });
 
     _durSub = _audioHandler.player.durationStream.listen((dur) {
@@ -272,6 +280,12 @@ class PlayerProvider extends ChangeNotifier {
         return;
       }
     }
+
+    // End of queue reached and no further tracks available: gracefully halt
+    _isPlaying = false;
+    _isLoadingStream = false;
+    notifyListeners();
+    await _audioHandler.pause();
   }
 
   void _prefetchNextTrack() {
@@ -334,23 +348,24 @@ class PlayerProvider extends ChangeNotifier {
     // Start proactive background preloading for the rest of the queue
     _prefetchNextTrack();
 
+    final thisSession = ++_playSessionId;
+
     // Defer non-critical auxiliary metadata tasks so audio stream has 100% network priority
     Future.microtask(() {
-      if (currentSong?.id == song.id) {
+      if (currentSong?.id == song.id && _playSessionId == thisSession) {
         _loadLyrics(song);
         _loadRecommendations(song);
       }
     });
 
-    try {
-      await _audioHandler.playSong(song);
-    } catch (e) {
-      debugPrint('[PlayerProvider] playback init error: $e');
-    } finally {
-      _isLoadingStream = false;
-      notifyListeners();
-      _replenishQueueIfNeeded();
+    await _audioHandler.playSong(song);
+    if (_playSessionId != thisSession) {
+      // Newer song selection superseded this one; discard outdated state updates
+      return;
     }
+    _isLoadingStream = false;
+    notifyListeners();
+    _replenishQueueIfNeeded();
   }
 
   Future<void> _loadLyrics(Song song) async {
@@ -470,7 +485,7 @@ class PlayerProvider extends ChangeNotifier {
     if (_currentIndex > 0) {
       _currentIndex--;
       notifyListeners();
-      await playSong(_queue[_currentIndex], isAutoAdvance: true);
+      await playSong(_queue[_currentIndex]);
     } else {
       await seek(Duration.zero);
     }
@@ -502,16 +517,14 @@ class PlayerProvider extends ChangeNotifier {
 
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
-    if (_isShuffle) {
+    if (_isShuffle && _queue.length > 1) {
       _unshuffledQueue = List.from(_queue);
-      if (_queue.length > 1) {
-        final cur = currentSong;
-        _queue.shuffle();
-        if (cur != null) {
-          _queue.remove(cur);
-          _queue.insert(0, cur);
-          _currentIndex = 0;
-        }
+      final cur = currentSong;
+      _queue.shuffle();
+      if (cur != null) {
+        _queue.remove(cur);
+        _queue.insert(0, cur);
+        _currentIndex = 0;
       }
     } else if (!_isShuffle && _unshuffledQueue.isNotEmpty) {
       final cur = currentSong;
@@ -623,9 +636,6 @@ class PlayerProvider extends ChangeNotifier {
       importMediaUrl(trimmed).then((msg) {
         _isSearching = false;
         notifyListeners();
-      }).catchError((e) {
-        _isSearching = false;
-        notifyListeners();
       });
       return;
     }
@@ -684,7 +694,7 @@ class PlayerProvider extends ChangeNotifier {
         stopPlayback();
       } else {
         _currentIndex = _currentIndex.clamp(0, _queue.length - 1);
-        playSong(_queue[_currentIndex], isAutoAdvance: true);
+        playSong(_queue[_currentIndex]);
       }
     } else if (index < _currentIndex) {
       _currentIndex--;
@@ -695,19 +705,15 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _queue.length || newIndex < 0 || newIndex > _queue.length) return;
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
+    final cur = currentSong;
     final item = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, item);
 
-    if (_currentIndex == oldIndex) {
-      _currentIndex = newIndex;
-    } else if (_currentIndex > oldIndex && _currentIndex <= newIndex) {
-      _currentIndex--;
-    } else if (_currentIndex < oldIndex && _currentIndex >= newIndex) {
-      _currentIndex++;
+    if (cur != null) {
+      _currentIndex = _queue.indexOf(cur);
     }
     notifyListeners();
   }

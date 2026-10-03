@@ -28,7 +28,6 @@ class PipedService {
   /// Returns a proxied audio URL that works on any network, or null if
   /// all instances fail.
   static Future<String?> getAudioStream(String videoId) async {
-    cleanCache();
     // Check cache first
     final cached = _cache[videoId];
     if (cached != null && DateTime.now().difference(cached.timestamp) < _cacheTtl) {
@@ -44,16 +43,21 @@ class PipedService {
 
         if (resp.statusCode != 200) continue;
 
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final decoded = jsonDecode(resp.body);
+        if (decoded is! Map) continue;
+        final data = Map<String, dynamic>.from(decoded);
         final audioStreams = data['audioStreams'] as List? ?? [];
         final proxyUrl = data['proxyUrl'] as String?;
 
         if (audioStreams.isEmpty) continue;
 
         // Sort by bitrate descending, prefer M4A/AAC for Android hardware decoder compatibility
-        final sorted = List<Map<String, dynamic>>.from(
-          audioStreams.map((s) => s as Map<String, dynamic>),
-        );
+        final sorted = audioStreams
+            .whereType<Map>()
+            .map((s) => Map<String, dynamic>.from(s))
+            .toList();
+        if (sorted.isEmpty) continue;
+
         sorted.sort((a, b) {
           final bitrateA = (a['bitrate'] as num?) ?? 0;
           final bitrateB = (b['bitrate'] as num?) ?? 0;
@@ -85,7 +89,13 @@ class PipedService {
           ).toString();
         }
 
-        // Cache the result
+        // Cache the result with size bounds
+        if (_cache.length >= 60) {
+          cleanCache();
+          if (_cache.length >= 60) {
+            _cache.remove(_cache.keys.first);
+          }
+        }
         _cache[videoId] = _CachedStream(url: streamUrl, timestamp: DateTime.now());
         debugPrint('[PipedService] Resolved audio for "$videoId" via $instance (${best['format']} ${best['quality']})');
         return streamUrl;
@@ -111,11 +121,14 @@ class PipedService {
 
         if (resp.statusCode != 200) continue;
 
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final decoded = jsonDecode(resp.body);
+        if (decoded is! Map) continue;
+        final data = Map<String, dynamic>.from(decoded);
         final items = data['items'] as List? ?? [];
         return items
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
             .where((item) => (item['type'] as String? ?? '') == 'stream')
-            .map((item) => item as Map<String, dynamic>)
             .take(10)
             .toList();
       } catch (e) {

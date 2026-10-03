@@ -52,10 +52,11 @@ class Playlist {
       title: map['title']?.toString() ?? 'Untitled Playlist',
       description: map['description']?.toString() ?? '',
       songs: (map['songs'] as List? ?? [])
-          .map((item) => Song.fromMap(item is Map<String, dynamic> ? item : {}))
+          .whereType<Map>()
+          .map((item) => Song.fromMap(Map<String, dynamic>.from(item)))
           .toList(),
       createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      coverUrl: map['coverUrl'] as String?,
+      coverUrl: map['coverUrl']?.toString(),
     );
   }
 }

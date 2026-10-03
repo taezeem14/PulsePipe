@@ -79,7 +79,15 @@ class CatalogService {
     ),
   ];
 
+  static const int _maxCategoryCache = 20;
   static final Map<String, List<Song>> _categoryCache = {};
+
+  static void _cacheCategory(String key, List<Song> songs) {
+    if (_categoryCache.length >= _maxCategoryCache) {
+      _categoryCache.remove(_categoryCache.keys.first);
+    }
+    _categoryCache[key] = songs;
+  }
 
   /// Search online catalog via YouTube NewPipe extractor
   static Future<List<Song>> searchOnline(String query, {int limit = 50}) async {
@@ -112,7 +120,7 @@ class CatalogService {
     try {
       final results = await searchOnline(cat.searchQuery, limit: 50);
       if (results.isNotEmpty) {
-        _categoryCache[categoryKey] = results;
+        _cacheCategory(categoryKey, results);
         return results;
       }
     } catch (e) {

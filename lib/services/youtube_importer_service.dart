@@ -77,7 +77,15 @@ class YouTubeImporterService {
   }
 
   static final YoutubeExplode _yt = YoutubeExplode();
+  static const int _maxCacheEntries = 100;
   static final Map<String, ({List<String> urls, DateTime cachedAt})> _streamCache = {};
+
+  static void _cacheStreams(String cleanId, List<String> urls) {
+    if (_streamCache.length >= _maxCacheEntries) {
+      _streamCache.remove(_streamCache.keys.first);
+    }
+    _streamCache[cleanId] = (urls: List.from(urls), cachedAt: DateTime.now());
+  }
 
   /// Invalidate cached stream URLs for a video ID if playback fails
   static void invalidateCache(String videoId) {
@@ -194,7 +202,7 @@ class YouTubeImporterService {
       }
 
       if (candidates.isNotEmpty) {
-        _streamCache[cleanId] = (urls: List.from(candidates), cachedAt: DateTime.now());
+        _cacheStreams(cleanId, candidates);
         return candidates;
       }
     } catch (e) {
@@ -205,7 +213,7 @@ class YouTubeImporterService {
     try {
       final pipedUrl = await PipedService.getAudioStream(cleanId);
       if (pipedUrl != null && pipedUrl.isNotEmpty) {
-        _streamCache[cleanId] = (urls: [pipedUrl], cachedAt: DateTime.now());
+        _cacheStreams(cleanId, [pipedUrl]);
         return [pipedUrl];
       }
     } catch (e) {

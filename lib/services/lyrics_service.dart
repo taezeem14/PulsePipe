@@ -87,8 +87,10 @@ class LyricsService {
             millis = (int.tryParse(frac) ?? 0) * 100;
           } else if (frac.length == 2) {
             millis = (int.tryParse(frac) ?? 0) * 10;
-          } else {
+          } else if (frac.length >= 3) {
             millis = int.tryParse(frac.substring(0, 3)) ?? 0;
+          } else {
+            millis = 0;
           }
 
           lineTimestamps.add(Duration(minutes: mins, seconds: secs, milliseconds: millis));
@@ -110,6 +112,14 @@ class LyricsService {
     return lines;
   }
 
+  static const int _maxCacheSize = 60;
+  static void _cacheLyrics(String key, LyricsResult result) {
+    if (_cache.length >= _maxCacheSize) {
+      _cache.remove(_cache.keys.first);
+    }
+    _cache[key] = result;
+  }
+
   static Future<LyricsResult> fetchLyrics(String title, String artist) async {
     final cleanTitle = cleanString(title);
     final cleanArtist = cleanString(artist);
@@ -128,18 +138,21 @@ class LyricsService {
       final resp = await http.get(getUrl, headers: {'User-Agent': 'EmberMusicApp/1.0'}).timeout(const Duration(seconds: 5));
 
       if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final syncedStr = data['syncedLyrics'] as String?;
-        final plainStr = data['plainLyrics'] as String? ?? '';
+        final decoded = jsonDecode(resp.body);
+        if (decoded is Map) {
+          final data = Map<String, dynamic>.from(decoded);
+          final syncedStr = data['syncedLyrics'] as String?;
+          final plainStr = data['plainLyrics'] as String? ?? '';
 
-        final syncedLines = syncedStr != null ? parseLrc(syncedStr) : <LyricLine>[];
-        final result = LyricsResult(
-          syncedLyrics: syncedLines,
-          plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
-          hasSynced: syncedLines.isNotEmpty,
-        );
-        _cache[cacheKey] = result;
-        return result;
+          final syncedLines = syncedStr != null ? parseLrc(syncedStr) : <LyricLine>[];
+          final result = LyricsResult(
+            syncedLyrics: syncedLines,
+            plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
+            hasSynced: syncedLines.isNotEmpty,
+          );
+          _cacheLyrics(cacheKey, result);
+          return result;
+        }
       }
 
       // 2. Search fallback
@@ -150,19 +163,22 @@ class LyricsService {
       final searchResp = await http.get(searchUrl, headers: {'User-Agent': 'EmberMusicApp/1.0'}).timeout(const Duration(seconds: 5));
 
       if (searchResp.statusCode == 200) {
-        final list = jsonDecode(searchResp.body) as List? ?? [];
-        if (list.isNotEmpty) {
-          final first = list.first as Map<String, dynamic>;
-          final syncedStr = first['syncedLyrics'] as String?;
-          final plainStr = first['plainLyrics'] as String? ?? '';
-          final syncedLines = syncedStr != null ? parseLrc(syncedStr) : <LyricLine>[];
-          final result = LyricsResult(
-            syncedLyrics: syncedLines,
-            plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
-            hasSynced: syncedLines.isNotEmpty,
-          );
-          _cache[cacheKey] = result;
-          return result;
+        final decodedList = jsonDecode(searchResp.body);
+        if (decodedList is List && decodedList.isNotEmpty) {
+          final firstRaw = decodedList.first;
+          if (firstRaw is Map) {
+            final first = Map<String, dynamic>.from(firstRaw);
+            final syncedStr = first['syncedLyrics'] as String?;
+            final plainStr = first['plainLyrics'] as String? ?? '';
+            final syncedLines = syncedStr != null ? parseLrc(syncedStr) : <LyricLine>[];
+            final result = LyricsResult(
+              syncedLyrics: syncedLines,
+              plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
+              hasSynced: syncedLines.isNotEmpty,
+            );
+            _cacheLyrics(cacheKey, result);
+            return result;
+          }
         }
       }
     } catch (e) {

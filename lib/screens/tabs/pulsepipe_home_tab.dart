@@ -466,17 +466,13 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
           ),
           if (actionText != null && onAction != null)
             GestureDetector(
-              behavior: HitTestBehavior.opaque,
               onTap: onAction,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Text(
-                  actionText,
-                  style: const TextStyle(
-                    color: EmberColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+              child: Text(
+                actionText,
+                style: const TextStyle(
+                  color: EmberColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -487,7 +483,6 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
 
   Widget _buildTrackCarouselCard(Song track, VoidCallback onTap) {
     return GestureDetector(
-      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         width: 135,

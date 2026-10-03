@@ -135,18 +135,15 @@ class DownloadService {
       var received = 0;
       final total = audioStreamInfo.size.totalBytes;
 
-      try {
-        await for (final chunk in stream) {
-          output.add(chunk);
-          received += chunk.length;
-          final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
-          _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
-          _progressController.add(_activeDownloads[songId]!);
-        }
-        await output.flush();
-      } finally {
-        await output.close();
+      await for (final chunk in stream) {
+        output.add(chunk);
+        received += chunk.length;
+        final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
+        _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
+        _progressController.add(_activeDownloads[songId]!);
       }
+      await output.flush();
+      await output.close();
 
       // Record in storage as downloaded
       final downloadedSong = song.copyWith(
@@ -219,22 +216,20 @@ class DownloadService {
       var received = 0;
       final total = streamInfo.size.totalBytes;
 
-      try {
-        await for (final chunk in stream) {
-          output.add(chunk);
-          received += chunk.length;
-          final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
-          _activeDownloads[videoIdKey] = DownloadProgress(
-            songId: videoIdKey,
-            progress: prog,
-            isVideo: true,
-          );
-          _progressController.add(_activeDownloads[videoIdKey]!);
-        }
-        await output.flush();
-      } finally {
-        await output.close();
+      await for (final chunk in stream) {
+        output.add(chunk);
+        received += chunk.length;
+        final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
+        _activeDownloads[videoIdKey] = DownloadProgress(
+          songId: videoIdKey,
+          progress: prog,
+          isVideo: true,
+        );
+        _progressController.add(_activeDownloads[videoIdKey]!);
       }
+
+      await output.flush();
+      await output.close();
 
       _activeDownloads[videoIdKey] = DownloadProgress(
         songId: videoIdKey,
