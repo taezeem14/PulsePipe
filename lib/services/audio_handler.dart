@@ -71,13 +71,6 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     'Accept': '*/*',
   };
 
-  /// Android YouTube client headers fallback
-  static const Map<String, String> _youtubeAndroidHeaders = {
-    'User-Agent': 'com.google.android.youtube/19.29.37 (Linux; U; Android 9) gzip',
-    'Origin': 'https://www.youtube.com',
-    'Referer': 'https://www.youtube.com/',
-    'Accept': '*/*',
-  };
 
   EmberAudioHandler() {
     _player = AudioPlayer(
@@ -350,7 +343,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
 
-        // Attempt 1: NewPipe desktop browser headers (Origin, Referer, Firefox User-Agent)
+        // Attempt 1: Standard YouTube streaming headers (Origin, Referer, Firefox User-Agent)
         try {
           LogService.stream('AudioHandler', 'Connecting to candidate #${i + 1} with YouTube streaming headers...');
           await _player.setUrl(
@@ -358,53 +351,33 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             headers: isYouTubeStream ? _youtubeHeaders : null,
             initialPosition: Duration.zero,
             preload: true,
-          ).timeout(const Duration(seconds: 10));
+          ).timeout(const Duration(seconds: 5));
           if (_currentSong?.id != targetSong.id) return;
           await _player.play();
           started = true;
           LogService.instance.recordPlaybackSuccess(song);
-          debugPrint('Successfully playing "${song.title}" via direct stream (candidate #${i + 1})');
+          debugPrint('Successfully playing "${song.title}" via candidate #${i + 1}');
           break;
         } catch (e) {
-          LogService.w('AudioHandler', 'Candidate #${i + 1} with web headers failed: $e. Retrying with mobile headers...');
+          LogService.w('AudioHandler', 'Candidate #${i + 1} with headers failed: $e. Retrying raw...');
         }
 
-        // Attempt 2: YouTube mobile client headers
-        if (isYouTubeStream && _currentSong?.id == targetSong.id) {
-          try {
-            await _player.setUrl(
-              url,
-              headers: _youtubeAndroidHeaders,
-              initialPosition: Duration.zero,
-              preload: true,
-            ).timeout(const Duration(seconds: 6));
-            if (_currentSong?.id != targetSong.id) return;
-            await _player.play();
-            started = true;
-            LogService.instance.recordPlaybackSuccess(song);
-            debugPrint('Successfully playing "${song.title}" via Android client headers (candidate #${i + 1})');
-            break;
-          } catch (e) {
-            LogService.w('AudioHandler', 'Candidate #${i + 1} with mobile headers failed: $e. Retrying standard...');
-          }
-        }
-
-        // Attempt 3: Standard setUrl without headers
+        // Attempt 2: Standard setUrl without headers (quick 3s fallback)
         if (_currentSong?.id == targetSong.id) {
           try {
             await _player.setUrl(
               url,
               initialPosition: Duration.zero,
               preload: true,
-            ).timeout(const Duration(seconds: 5));
+            ).timeout(const Duration(seconds: 3));
             if (_currentSong?.id != targetSong.id) return;
             await _player.play();
             started = true;
             LogService.instance.recordPlaybackSuccess(song);
-            debugPrint('Successfully playing "${song.title}" via raw stream (candidate #${i + 1})');
+            debugPrint('Successfully playing "${song.title}" via candidate #${i + 1} raw stream');
             break;
           } catch (e) {
-            LogService.w('AudioHandler', 'Candidate #${i + 1} raw stream failed: $e');
+            LogService.w('AudioHandler', 'Candidate #${i + 1} raw stream failed: $e. Moving to next candidate...');
           }
         }
       }
