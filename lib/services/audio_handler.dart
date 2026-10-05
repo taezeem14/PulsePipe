@@ -60,19 +60,38 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   List<SponsorSegment> _activeSponsorSegments = [];
   bool _isSkippingSponsor = false;
 
+  /// NewPipe YouTube streaming headers for ExoPlayer HTTP data source
+  static const Map<String, String> _youtubeHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+    'Origin': 'https://www.youtube.com',
+    'Referer': 'https://www.youtube.com/',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'cross-site',
+    'Accept': '*/*',
+  };
+
+  /// Android YouTube client headers fallback
+  static const Map<String, String> _youtubeAndroidHeaders = {
+    'User-Agent': 'com.google.android.youtube/19.29.37 (Linux; U; Android 9) gzip',
+    'Origin': 'https://www.youtube.com',
+    'Referer': 'https://www.youtube.com/',
+    'Accept': '*/*',
+  };
+
   EmberAudioHandler() {
     _player = AudioPlayer(
       audioLoadConfiguration: const AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
           minBufferDuration: Duration(seconds: 15),
           maxBufferDuration: Duration(seconds: 45),
-          bufferForPlaybackDuration: Duration(milliseconds: 2000),
-          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 3500),
+          bufferForPlaybackDuration: Duration(milliseconds: 500),
+          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 1500),
           backBufferDuration: Duration(seconds: 10),
         ),
         darwinLoadControl: DarwinLoadControl(
           automaticallyWaitsToMinimizeStalling: false,
-          preferredForwardBufferDuration: Duration(seconds: 3),
+          preferredForwardBufferDuration: Duration(seconds: 2),
         ),
       ),
       audioPipeline: AudioPipeline(
@@ -189,8 +208,13 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         final total = _player.duration;
         final pos = _player.position;
         // Verify track genuinely played near completion (> 85% or within 4s of end)
-        final isNearEnd = total != null && total.inSeconds > 5 && pos.inSeconds >= (total.inSeconds - 4);
-        if (total != null && total.inSeconds > 10 && !isNearEnd) {
+        // If total is null or <= 5 seconds, this is a decode/network failure, NOT a genuine completion!
+        if (total == null || total.inSeconds <= 5) {
+          debugPrint('[AudioHandler] Incomplete track playback completion ignored (pos: ${pos.inSeconds}s, total: ${total?.inSeconds}s)');
+          return;
+        }
+        final isNearEnd = pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85);
+        if (!isNearEnd) {
           debugPrint('[AudioHandler] Premature completion event ignored (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
           return;
         }
@@ -229,17 +253,17 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   }
 
   Future<void> playSong(Song song) async {
-    // Flush ExoPlayer pipeline before loading new track to avoid stale playback events
-    try {
-      await _player.stop();
-    } catch (_) {}
-
-    // Reset flags so completion cannot fire prematurely while this track is loading/transitioning
+    // Reset flags immediately BEFORE touching ExoPlayer so state transitions during stop() cannot fire _onCompleted
     _currentTrackActive = false;
     _completionHandled = true;
     _currentSong = song;
     _activeSponsorSegments = [];
     _isSkippingSponsor = false;
+
+    // Flush ExoPlayer pipeline before loading new track to avoid stale playback events
+    try {
+      await _player.stop();
+    } catch (_) {}
 
     // Query SponsorBlock skip segments deferred (after 3s) so initial audio gets 100% bandwidth
     Future.delayed(const Duration(seconds: 3), () {
@@ -324,22 +348,64 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       for (int i = 0; i < candidates.length; i++) {
         final url = candidates[i];
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
+        final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
+
+        // Attempt 1: NewPipe desktop browser headers (Origin, Referer, Firefox User-Agent)
         try {
-          LogService.stream('AudioHandler', 'Connecting to stream candidate #${i + 1}...');
+          LogService.stream('AudioHandler', 'Connecting to candidate #${i + 1} with YouTube streaming headers...');
           await _player.setUrl(
             url,
+            headers: isYouTubeStream ? _youtubeHeaders : null,
             initialPosition: Duration.zero,
             preload: true,
-          ).timeout(const Duration(seconds: 12));
-          if (_currentSong?.id != targetSong.id) return; // Superseded during network connect
+          ).timeout(const Duration(seconds: 10));
+          if (_currentSong?.id != targetSong.id) return;
           await _player.play();
           started = true;
           LogService.instance.recordPlaybackSuccess(song);
-          debugPrint('Successfully playing "${song.title}" via direct stream');
+          debugPrint('Successfully playing "${song.title}" via direct stream (candidate #${i + 1})');
           break;
         } catch (e) {
-          LogService.w('AudioHandler', 'Candidate stream #${i + 1} failed: $e');
-          debugPrint('Candidate stream failed for "${song.title}": $e. Trying next candidate...');
+          LogService.w('AudioHandler', 'Candidate #${i + 1} with web headers failed: $e. Retrying with mobile headers...');
+        }
+
+        // Attempt 2: YouTube mobile client headers
+        if (isYouTubeStream && _currentSong?.id == targetSong.id) {
+          try {
+            await _player.setUrl(
+              url,
+              headers: _youtubeAndroidHeaders,
+              initialPosition: Duration.zero,
+              preload: true,
+            ).timeout(const Duration(seconds: 6));
+            if (_currentSong?.id != targetSong.id) return;
+            await _player.play();
+            started = true;
+            LogService.instance.recordPlaybackSuccess(song);
+            debugPrint('Successfully playing "${song.title}" via Android client headers (candidate #${i + 1})');
+            break;
+          } catch (e) {
+            LogService.w('AudioHandler', 'Candidate #${i + 1} with mobile headers failed: $e. Retrying standard...');
+          }
+        }
+
+        // Attempt 3: Standard setUrl without headers
+        if (_currentSong?.id == targetSong.id) {
+          try {
+            await _player.setUrl(
+              url,
+              initialPosition: Duration.zero,
+              preload: true,
+            ).timeout(const Duration(seconds: 5));
+            if (_currentSong?.id != targetSong.id) return;
+            await _player.play();
+            started = true;
+            LogService.instance.recordPlaybackSuccess(song);
+            debugPrint('Successfully playing "${song.title}" via raw stream (candidate #${i + 1})');
+            break;
+          } catch (e) {
+            LogService.w('AudioHandler', 'Candidate #${i + 1} raw stream failed: $e');
+          }
         }
       }
 
@@ -355,9 +421,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             if (pipedUrl != null && pipedUrl.isNotEmpty && _currentSong?.id == targetSong.id) {
               await _player.setUrl(
                 pipedUrl,
+                headers: _youtubeHeaders,
                 initialPosition: Duration.zero,
                 preload: true,
-              ).timeout(const Duration(seconds: 12));
+              ).timeout(const Duration(seconds: 10));
               if (_currentSong?.id != targetSong.id) return;
               await _player.play();
               started = true;

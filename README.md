@@ -47,17 +47,25 @@ We cooked so you can vibe. Fr fr. 👨‍🍳🔥
 ## 🚀 The Feature Flex
 
 ### ⚡ 1. Instant NewPipe Stream Engine (Zero-Delay Playback 🏎️💨)
-- **Sub-500ms Instant Play**: Gone are the days of waiting 15–60 seconds for a song to load. PulsePipe utilizes direct YouTube InnerTube `ANDROID_VR` extraction that pulls raw, high-bitrate Opus streams in **300–500ms** flat.
+- **Sub-500ms Instant Play**: Gone are the days of waiting 15–60 seconds for a song to load. PulsePipe utilizes direct YouTube InnerTube extraction, pre-buffers in 500ms, and begins playback immediately.
+- **Native ExoPlayer Stream Headers**: Injects authentic NewPipe headers (`User-Agent`, `Origin`, `Referer`, `Sec-Fetch-Mode`) directly into Android ExoPlayer's HTTP DataSource, bypassing GoogleVideo CDN 403 blocks and preventing `(0) Source error`.
+- **Runaway Auto-Advance Defense**: Rock-solid completion guards prevent accidental runaway queue scrolling or chain-skipping when a track is loading or transitioning.
 - **Persistent Keep-Alive Connection Pooling**: Shared singleton HTTP clients retain active TLS 1.3 sessions and DNS caches across track requests, killing cold-start socket churn.
-- **Deep Background Prefetching**: The moment you tap play on a track or playlist, PulsePipe pre-resolves the next queued songs in the background.
-- **Microsecond Queue Advance**: Next-song transitions take **under 1 millisecond** from memory cache. True gapless bangers back-to-back. No awkward pauses.
+- **Deep Background Prefetching**: The moment you tap play on a track or playlist, PulsePipe pre-resolves the next queued song in the background with `WINDOW_SIZE = 1` precision.
+- **Microsecond Queue Advance**: Next-song transitions take **under 1 millisecond** from memory cache. True gapless playback back-to-back. No awkward pauses.
 
-### 🎧 2. Pure YouTube Engine (Powered by NewPipe)
+### 🔍 2. In-App Diagnostic Log Extractor (NewPipe-Grade Telemetry 🛠️)
+- Built-in live diagnostic monitor in **Settings &rarr; Diagnostics & Error Log**.
+- Inspect active ExoPlayer hardware decoding states, resolved audio stream candidates (M4A/AAC vs WebM/Opus), and connection timings.
+- Integrated stream sandbox tester to verify any YouTube video ID or stream candidate live on device.
+- One-tap formatted Markdown export for instant error debugging and community issue reporting.
+
+### 🎧 3. Pure YouTube Engine (Powered by NewPipe)
 - Streams direct Opus (160 kbps audiophile) and AAC audio streams straight from YouTube servers.
 - No Spotify audio leaks, no sketchy third-party backend scraping, no fake 320kbps MP3 transcode nonsense.
 - Instant search across billions of tracks, official artist uploads, live covers, lo-fi beats, unreleased tracks, and remixes.
 
-### 🚫 3. Zero Ads + Integrated SponsorBlock
+### 🚫 4. Zero Ads + Integrated SponsorBlock
 - You will literally never hear an ad. Ever.
 - Built-in **SponsorBlock** automatically detects and skips annoying podcast host sponsorships, intro skits, and outro sponsor plugs. It just stays on the music. Ain't nobody got time for that.
 

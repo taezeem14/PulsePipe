@@ -173,10 +173,20 @@ class YouTubeImporterService {
     // Tier 1: Persistent YoutubeExplode (deciphers signatures and resolves in ~400-800ms with warm connection)
     try {
       LogService.stream('YouTubeEngine', 'Querying InnerTube manifest for $cleanId...');
-      final manifest = await _yt.videos.streamsClient.getManifest(
-        cleanId,
-        requireWatchPage: false,
-      ).timeout(const Duration(seconds: 8));
+      StreamManifest manifest;
+      try {
+        manifest = await _yt.videos.streamsClient.getManifest(
+          cleanId,
+          requireWatchPage: false,
+        ).timeout(const Duration(seconds: 6));
+      } catch (innerErr) {
+        LogService.stream('YouTubeEngine', 'InnerTube primary manifest query failed ($innerErr), attempting watch page manifest...');
+        manifest = await _yt.videos.streamsClient.getManifest(
+          cleanId,
+          requireWatchPage: true,
+        ).timeout(const Duration(seconds: 8));
+      }
+
       final candidates = <String>[];
 
       // High-speed NewPipe audio stream prioritization for Android:
@@ -192,12 +202,10 @@ class YouTubeImporterService {
         candidates.add(webmAudio.withHighestBitrate().url.toString());
       }
 
-      // 3. Tertiary: Muxed MP4 fallback (if audio-only streams unavailable)
-      if (candidates.isEmpty) {
-        final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
-        if (muxedMp4.isNotEmpty) {
-          candidates.add(muxedMp4.withHighestBitrate().url.toString());
-        }
+      // 3. Tertiary: Muxed MP4 stream fallback (for edge cases where standalone audio tracks fail)
+      final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+      if (muxedMp4.isNotEmpty) {
+        candidates.add(muxedMp4.withHighestBitrate().url.toString());
       }
 
       if (candidates.isNotEmpty) {

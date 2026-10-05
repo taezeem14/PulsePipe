@@ -14,9 +14,10 @@ class PipedService {
   PipedService._();
 
   static const _instances = [
-    'https://pipedapi.kavin.rocks',
-    'https://api.piped.privacydev.net',
-    'https://pipedapi.in.projectsegfau.lt',
+    'https://pipedapi.smnz.de',
+    'https://pipedapi.adminforge.de',
+    'https://piped-api.lunar.icu',
+    'https://pipedapi.leptons.xyz',
     'https://pipedapi.ducks.party',
     'https://pipedapi.drgns.space',
   ];
@@ -111,6 +112,30 @@ class PipedService {
         debugPrint('[PipedService] Instance $instance failed for "$videoId": $e');
         continue;
       }
+    }
+
+    // Secondary fallback: Invidious API endpoint
+    try {
+      LogService.stream('PipedService', 'Attempting Invidious API fallback for "$videoId"...');
+      final invUrl = Uri.parse('https://invidious.f5.si/api/v1/videos/$videoId');
+      final resp = await http.get(invUrl).timeout(const Duration(seconds: 4));
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is Map) {
+          final adaptiveFormats = decoded['adaptiveFormats'] as List? ?? [];
+          final audioList = adaptiveFormats.where((f) => (f['type'] as String? ?? '').contains('audio')).toList();
+          if (audioList.isNotEmpty) {
+            final best = audioList.first;
+            final streamUrl = best['url'] as String? ?? '';
+            if (streamUrl.isNotEmpty) {
+              LogService.stream('PipedService', 'Resolved audio via Invidious API fallback for "$videoId"');
+              return streamUrl;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      LogService.w('PipedService', 'Invidious fallback failed for "$videoId": $e');
     }
 
     LogService.w('PipedService', 'All fallback instances failed for "$videoId"');
