@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
 import 'sound_shaping_sheet.dart';
+import 'diagnostics_log_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -322,6 +323,18 @@ class SettingsContent extends StatelessWidget {
           subtitle: 'No telemetry, zero third-party ads, strictly local storage',
           trailing: Text('100% Free', style: TextStyle(color: EmberColors.primaryAmber, fontSize: 12)),
           onTap: null,
+        ),
+        _SettingsTile(
+          icon: FontAwesomeIcons.terminal,
+          iconColor: const Color(0xFF00E5FF),
+          title: 'Diagnostics & Log Extractor',
+          subtitle: 'Live ExoPlayer telemetry, candidate stream inspector & bug reporter',
+          trailing: const FaIcon(FontAwesomeIcons.chevronRight, size: 12, color: EmberColors.textMuted),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DiagnosticsLogScreen()),
+            );
+          },
         ),
         const SizedBox(height: 24),
       ],

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
+import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/mini_player.dart';
 import 'tabs/pulsepipe_home_tab.dart';
 import 'tabs/pulsepipe_search_tab.dart';
 import 'tabs/pulsepipe_library_tab.dart';
+import 'diagnostics_log_screen.dart';
 
 class PulsePipeShellScreen extends StatefulWidget {
   const PulsePipeShellScreen({super.key});
@@ -15,6 +18,60 @@ class PulsePipeShellScreen extends StatefulWidget {
 
 class _PulsePipeShellScreenState extends State<PulsePipeShellScreen> {
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<PlayerProvider>().playbackErrorNotifier.addListener(_onPlaybackError);
+    });
+  }
+
+  @override
+  void dispose() {
+    try {
+      context.read<PlayerProvider>().playbackErrorNotifier.removeListener(_onPlaybackError);
+    } catch (_) {}
+    super.dispose();
+  }
+
+  void _onPlaybackError() {
+    if (!mounted) return;
+    final failedSong = context.read<PlayerProvider>().playbackErrorNotifier.value;
+    if (failedSong == null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: EmberColors.surfaceContainerHigh,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Row(
+          children: [
+            const FaIcon(FontAwesomeIcons.triangleExclamation, color: Color(0xFFFF5252), size: 16),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Stream failed for "${failedSong.title}"',
+                style: const TextStyle(color: EmberColors.textPrimary, fontSize: 12.5),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'VIEW LOG',
+          textColor: EmberColors.primaryAmber,
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DiagnosticsLogScreen()),
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   void _onTabTapped(int index) {
     setState(() {

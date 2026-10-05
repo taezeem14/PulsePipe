@@ -55,6 +55,9 @@ class PlayerProvider extends ChangeNotifier {
   bool _isLoadingLyrics = false;
   bool _isLoadingStream = false;
   int _playSessionId = 0;
+  Song? _lastFailedSong;
+  Song? get lastFailedSong => _lastFailedSong;
+  final ValueNotifier<Song?> playbackErrorNotifier = ValueNotifier<Song?>(null);
 
   Timer? _sleepTimer;
   int _sleepSecondsRemaining = 0;
@@ -151,6 +154,8 @@ class PlayerProvider extends ChangeNotifier {
       onPlaybackFailed: (failedSong) {
         debugPrint('[PlayerProvider] Stream failed for: ${failedSong.title}');
         _consecutiveStreamFailures++;
+        _lastFailedSong = failedSong;
+        playbackErrorNotifier.value = failedSong;
         StreamResolverService.invalidateCache(failedSong.id);
         YouTubeImporterService.invalidateCache(failedSong.id);
         _isPlaying = false;
@@ -981,6 +986,7 @@ class PlayerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    playbackErrorNotifier.dispose();
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();

@@ -8,6 +8,7 @@ import 'stream_resolver_service.dart';
 import 'sponsorblock_service.dart';
 import 'youtube_importer_service.dart';
 import 'piped_service.dart';
+import 'log_service.dart';
 
 
 Future<AudioHandler> initAudioHandler() async {
@@ -178,6 +179,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
     // Auto-advance when song finishes (guarded to fire only when track genuinely started and completed playback)
     _player.playerStateStream.listen((state) {
+      LogService.instance.recordExoState('${state.processingState.name} (playing: ${state.playing})');
       if (state.playing && state.processingState == ProcessingState.ready) {
         _currentTrackActive = true;
         _completionHandled = false;
@@ -308,6 +310,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
       // Online pure YouTube stream resolution via NewPipe extractor
       final targetSong = song;
+      LogService.instance.recordActiveTrack(song);
 
       // Resolve direct YouTube Opus / AAC streams
       final candidates = await StreamResolverService.resolvePlayableStreamCandidates(song);
@@ -315,11 +318,14 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       if (candidates.isEmpty && s.isNotEmpty && !s.contains('youtube.com/watch') && !s.contains('youtu.be/')) {
         candidates.add(s);
       }
+      LogService.instance.recordCandidates(candidates);
 
       bool started = false;
-      for (final url in candidates) {
+      for (int i = 0; i < candidates.length; i++) {
+        final url = candidates[i];
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         try {
+          LogService.stream('AudioHandler', 'Connecting to stream candidate #${i + 1}...');
           await _player.setUrl(
             url,
             initialPosition: Duration.zero,
@@ -328,9 +334,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           if (_currentSong?.id != targetSong.id) return; // Superseded during network connect
           await _player.play();
           started = true;
+          LogService.instance.recordPlaybackSuccess(song);
           debugPrint('Successfully playing "${song.title}" via direct stream');
           break;
         } catch (e) {
+          LogService.w('AudioHandler', 'Candidate stream #${i + 1} failed: $e');
           debugPrint('Candidate stream failed for "${song.title}": $e. Trying next candidate...');
         }
       }
@@ -342,7 +350,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             : YouTubeImporterService.extractVideoId(song.streamUrl);
         if (videoId != null && videoId.isNotEmpty) {
           try {
-            debugPrint('[AudioHandler] Direct streams failed, attempting Piped proxy fallback for $videoId...');
+            LogService.stream('AudioHandler', 'Direct streams failed, attempting Piped proxy fallback for $videoId...');
             final pipedUrl = await PipedService.getAudioStream(videoId);
             if (pipedUrl != null && pipedUrl.isNotEmpty && _currentSong?.id == targetSong.id) {
               await _player.setUrl(
@@ -353,9 +361,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
               if (_currentSong?.id != targetSong.id) return;
               await _player.play();
               started = true;
+              LogService.instance.recordPlaybackSuccess(song);
               debugPrint('Successfully playing "${song.title}" via Piped proxy fallback');
             }
           } catch (e) {
+            LogService.w('AudioHandler', 'Piped proxy fallback error: $e');
             debugPrint('[AudioHandler] Piped proxy fallback error for "${song.title}": $e');
           }
         }
@@ -363,6 +373,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
       if (!started) {
         debugPrint('All stream candidates failed for "${song.title}". Halting playback gracefully.');
+        LogService.instance.recordPlaybackFailure(song, 'All stream candidates exhausted (failed to connect or decode audio)');
         StreamResolverService.invalidateCache(song.id);
         YouTubeImporterService.invalidateCache(song.id);
         playbackState.add(
@@ -374,8 +385,9 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         _onPlaybackFailed?.call(song);
         return;
       }
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('Playback error: $e');
+      LogService.instance.recordPlaybackFailure(song, e, st);
       StreamResolverService.invalidateCache(song.id);
       YouTubeImporterService.invalidateCache(song.id);
       playbackState.add(

@@ -5,6 +5,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Playlist;
 import '../models/song.dart';
 import '../models/playlist.dart';
 import 'piped_service.dart';
+import 'log_service.dart';
 
 enum YouTubeImportType { video, playlist, unknown }
 
@@ -171,6 +172,7 @@ class YouTubeImporterService {
 
     // Tier 1: Persistent YoutubeExplode (deciphers signatures and resolves in ~400-800ms with warm connection)
     try {
+      LogService.stream('YouTubeEngine', 'Querying InnerTube manifest for $cleanId...');
       final manifest = await _yt.videos.streamsClient.getManifest(
         cleanId,
         requireWatchPage: false,
@@ -199,24 +201,30 @@ class YouTubeImporterService {
       }
 
       if (candidates.isNotEmpty) {
+        LogService.stream('YouTubeEngine', 'InnerTube resolved ${candidates.length} candidate(s) for $cleanId');
         _cacheStreams(cleanId, candidates);
         return candidates;
       }
     } catch (e) {
+      LogService.w('YouTubeEngine', 'youtube_explode manifest error for $cleanId: $e');
       debugPrint('[YouTube] youtube_explode_dart getAudioStreamUrls error for $cleanId: $e');
     }
 
     // Tier 3: High-speed Piped API proxy fallback
     try {
+      LogService.stream('YouTubeEngine', 'Attempting Piped proxy fallback for $cleanId...');
       final pipedUrl = await PipedService.getAudioStream(cleanId);
       if (pipedUrl != null && pipedUrl.isNotEmpty) {
+        LogService.stream('YouTubeEngine', 'Piped proxy succeeded for $cleanId');
         _cacheStreams(cleanId, [pipedUrl]);
         return [pipedUrl];
       }
     } catch (e) {
+      LogService.w('YouTubeEngine', 'Piped proxy fallback error for $cleanId: $e');
       debugPrint('[YouTube] Piped proxy fallback error for $cleanId: $e');
     }
 
+    LogService.w('YouTubeEngine', 'No audio stream could be extracted for $cleanId');
     return [];
   }
 

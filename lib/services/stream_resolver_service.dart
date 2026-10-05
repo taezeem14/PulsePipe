@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import 'youtube_importer_service.dart';
+import 'log_service.dart';
 class StreamResolverService {
   static const int _maxCacheEntries = 100;
   static final Map<String, ({List<String> streams, DateTime cachedAt})> _resolvedCache = {};
@@ -87,6 +88,7 @@ class StreamResolverService {
     final cacheKey = song.id.isNotEmpty ? song.id : song.streamUrl;
     final cached = _resolvedCache[cacheKey];
     if (cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inHours < 4) {
+      LogService.stream('StreamResolver', 'Cache HIT for "${song.title}": ${cached.streams.length} candidate(s)');
       return List.from(cached.streams);
     }
 
@@ -94,6 +96,7 @@ class StreamResolverService {
 
     // 1. Local offline files
     if (s.isNotEmpty && (s.startsWith('/') || s.startsWith('file://'))) {
+      LogService.stream('StreamResolver', 'Local offline file identified for "${song.title}": $s');
       return [s];
     }
 
@@ -108,14 +111,17 @@ class StreamResolverService {
     // 3. If videoId found, extract direct YouTube audio streams
     if (videoId != null && videoId.isNotEmpty) {
       try {
+        LogService.stream('StreamResolver', 'Resolving direct YouTube streams for $videoId ("${song.title}")...');
         debugPrint('[NewPipe Engine] Resolving YouTube audio streams for $videoId ("${song.title}")...');
         final streams = await YouTubeImporterService.getAudioStreamUrls(videoId);
         if (streams.isNotEmpty) {
+          LogService.stream('StreamResolver', 'Resolved ${streams.length} direct YouTube audio streams for "${song.title}"');
           debugPrint('[NewPipe Engine] Resolved ${streams.length} direct YouTube audio streams for "${song.title}"');
           _cacheStreams(cacheKey, streams);
           return streams;
         }
       } catch (e) {
+        LogService.w('StreamResolver', 'Direct extraction error for $videoId: $e');
         debugPrint('[NewPipe Engine] Direct extraction error for $videoId: $e');
       }
     }
@@ -125,6 +131,7 @@ class StreamResolverService {
       final cleanT = cleanTitle(song.title);
       final cleanA = song.artist != 'Unknown Artist' && song.artist.isNotEmpty ? song.artist.trim() : '';
       final query = cleanA.isNotEmpty ? '$cleanT $cleanA' : cleanT;
+      LogService.stream('StreamResolver', 'Searching YouTube dynamically for "$query"...');
       debugPrint('[NewPipe Engine] Searching YouTube for "$query"...');
 
       final searchMatches = await YouTubeImporterService.searchYouTube(query, limit: 3);
@@ -134,6 +141,7 @@ class StreamResolverService {
         if (matchVideoId.isNotEmpty) {
           final streams = await YouTubeImporterService.getAudioStreamUrls(matchVideoId);
           if (streams.isNotEmpty) {
+            LogService.stream('StreamResolver', 'Dynamic search resolved ${streams.length} streams for "$query"');
             debugPrint('[NewPipe Engine] Dynamic search resolved ${streams.length} streams for "$query"');
             _cacheStreams(cacheKey, streams);
             return streams;
@@ -141,9 +149,11 @@ class StreamResolverService {
         }
       }
     } catch (e) {
+      LogService.w('StreamResolver', 'Dynamic search error for "${song.title}": $e');
       debugPrint('[NewPipe Engine] Dynamic search error for "${song.title}": $e');
     }
 
+    LogService.w('StreamResolver', 'Could not resolve any audio stream candidates for "${song.title}"');
     return [];
   }
 }

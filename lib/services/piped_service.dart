@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'log_service.dart';
 
 /// Piped API service — YouTube audio proxy with multi-instance failover.
 ///
@@ -41,9 +42,12 @@ class PipedService {
         final url = Uri.parse('$instance/streams/$videoId');
         final resp = await http.get(url, headers: {
           'Accept': 'application/json',
-        }).timeout(const Duration(seconds: 4));
+        }).timeout(const Duration(milliseconds: 2500));
 
-        if (resp.statusCode != 200) continue;
+        if (resp.statusCode != 200) {
+          LogService.w('PipedService', 'Instance $instance returned HTTP ${resp.statusCode} for $videoId');
+          continue;
+        }
 
         final decoded = jsonDecode(resp.body);
         if (decoded is! Map) continue;
@@ -99,14 +103,17 @@ class PipedService {
           }
         }
         _cache[videoId] = _CachedStream(url: streamUrl, timestamp: DateTime.now());
+        LogService.stream('PipedService', 'Resolved proxy audio for "$videoId" via $instance (${best['format']})');
         debugPrint('[PipedService] Resolved audio for "$videoId" via $instance (${best['format']} ${best['quality']})');
         return streamUrl;
       } catch (e) {
+        LogService.w('PipedService', 'Instance $instance failed for "$videoId": $e');
         debugPrint('[PipedService] Instance $instance failed for "$videoId": $e');
         continue;
       }
     }
 
+    LogService.w('PipedService', 'All fallback instances failed for "$videoId"');
     debugPrint('[PipedService] All instances failed for "$videoId"');
     return null;
   }
