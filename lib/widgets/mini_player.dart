@@ -23,36 +23,25 @@ class MiniPlayer extends StatelessWidget {
         ? (player.position.inMilliseconds / player.duration.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
 
-    return Dismissible(
-      key: ValueKey('mini_player_${song.id}'),
-      direction: DismissDirection.down,
-      onDismissed: (_) {
+    return GestureDetector(
+      onLongPress: () {
         player.stopPlayback();
       },
-      child: GestureDetector(
-        onVerticalDragEnd: (details) {
-          if (details.primaryVelocity != null && details.primaryVelocity! > 250) {
-            player.stopPlayback();
-          }
-        },
-        onLongPress: () {
-          player.stopPlayback();
-        },
-        onTap: () {
-          Navigator.of(context).push(
-            PageRouteBuilder(
-              pageBuilder: (context, anim, secAnim) => const NowPlayingScreen(),
-              transitionsBuilder: (context, anim, secAnim, child) {
-                const begin = Offset(0.0, 1.0);
-                const end = Offset.zero;
-                const curve = Curves.easeOutCubic;
-                final tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-                return SlideTransition(position: anim.drive(tween), child: child);
-              },
-            ),
-          );
-        },
-        child: Container(
+      onTap: () {
+        Navigator.of(context).push(
+          PageRouteBuilder(
+            pageBuilder: (context, anim, secAnim) => const NowPlayingScreen(),
+            transitionsBuilder: (context, anim, secAnim, child) {
+              const begin = Offset(0.0, 1.0);
+              const end = Offset.zero;
+              const curve = Curves.easeOutCubic;
+              final tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+              return SlideTransition(position: anim.drive(tween), child: child);
+            },
+          ),
+        );
+      },
+      child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
 
         decoration: BoxDecoration(
@@ -182,9 +171,8 @@ class MiniPlayer extends StatelessWidget {
           ],
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
 }
 

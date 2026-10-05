@@ -7,6 +7,7 @@ import '../models/song.dart';
 import 'stream_resolver_service.dart';
 import 'sponsorblock_service.dart';
 import 'youtube_importer_service.dart';
+import 'piped_service.dart';
 
 
 Future<AudioHandler> initAudioHandler() async {
@@ -62,11 +63,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _player = AudioPlayer(
       audioLoadConfiguration: const AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
-          minBufferDuration: Duration(milliseconds: 1500),
-          maxBufferDuration: Duration(seconds: 20),
-          bufferForPlaybackDuration: Duration(milliseconds: 200),
-          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 800),
-          backBufferDuration: Duration(seconds: 5),
+          minBufferDuration: Duration(seconds: 15),
+          maxBufferDuration: Duration(seconds: 45),
+          bufferForPlaybackDuration: Duration(milliseconds: 2000),
+          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 3500),
+          backBufferDuration: Duration(seconds: 10),
         ),
         darwinLoadControl: DarwinLoadControl(
           automaticallyWaitsToMinimizeStalling: false,
@@ -183,6 +184,14 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
 
       if (state.processingState == ProcessingState.completed && _currentTrackActive && !_completionHandled) {
+        final total = _player.duration;
+        final pos = _player.position;
+        // Verify track genuinely played near completion (> 85% or within 4s of end)
+        final isNearEnd = total != null && total.inSeconds > 5 && pos.inSeconds >= (total.inSeconds - 4);
+        if (total != null && total.inSeconds > 10 && !isNearEnd) {
+          debugPrint('[AudioHandler] Premature completion event ignored (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
+          return;
+        }
         _currentTrackActive = false;
         _completionHandled = true;
         debugPrint('[AudioHandler] Track "${_currentSong?.title}" completed playback cleanly. Invoking onCompleted.');
@@ -194,9 +203,12 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _player.positionStream.listen((pos) {
       if (_activeSponsorSegments.isNotEmpty && !_isSkippingSponsor) {
         final currentSec = pos.inMilliseconds / 1000.0;
+        final totalSec = (_player.duration?.inMilliseconds ?? 0) / 1000.0;
         // Never seek in the first 12 seconds to prevent stalling initial playback
         if (currentSec < 12.0) return;
         for (final segment in _activeSponsorSegments) {
+          // Never skip near the very end of the song (prevents premature track completion)
+          if (totalSec > 20.0 && segment.end >= (totalSec - 4.0)) continue;
           if (segment.start < 12.0) continue;
           if (currentSec >= segment.start && currentSec < (segment.end - 0.3)) {
             _isSkippingSponsor = true;
@@ -215,6 +227,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   }
 
   Future<void> playSong(Song song) async {
+    // Flush ExoPlayer pipeline before loading new track to avoid stale playback events
+    try {
+      await _player.stop();
+    } catch (_) {}
+
     // Reset flags so completion cannot fire prematurely while this track is loading/transitioning
     _currentTrackActive = false;
     _completionHandled = true;
@@ -305,24 +322,42 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         try {
           await _player.setUrl(
             url,
-            headers: const {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
-              'Origin': 'https://www.youtube.com',
-              'Referer': 'https://www.youtube.com/',
-              'Sec-Fetch-Dest': 'empty',
-              'Sec-Fetch-Mode': 'cors',
-              'Sec-Fetch-Site': 'cross-site',
-            },
             initialPosition: Duration.zero,
             preload: true,
-          ).timeout(const Duration(seconds: 4));
+          ).timeout(const Duration(seconds: 12));
           if (_currentSong?.id != targetSong.id) return; // Superseded during network connect
           await _player.play();
           started = true;
-          debugPrint('Successfully playing "${song.title}" via: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
+          debugPrint('Successfully playing "${song.title}" via direct stream');
           break;
         } catch (e) {
           debugPrint('Candidate stream failed for "${song.title}": $e. Trying next candidate...');
+        }
+      }
+
+      // Tier 2 Fallback: If all direct YouTube candidate streams fail, try Piped audio proxy
+      if (!started) {
+        final videoId = song.id.startsWith('yt_')
+            ? song.id.replaceFirst('yt_', '')
+            : YouTubeImporterService.extractVideoId(song.streamUrl);
+        if (videoId != null && videoId.isNotEmpty) {
+          try {
+            debugPrint('[AudioHandler] Direct streams failed, attempting Piped proxy fallback for $videoId...');
+            final pipedUrl = await PipedService.getAudioStream(videoId);
+            if (pipedUrl != null && pipedUrl.isNotEmpty && _currentSong?.id == targetSong.id) {
+              await _player.setUrl(
+                pipedUrl,
+                initialPosition: Duration.zero,
+                preload: true,
+              ).timeout(const Duration(seconds: 12));
+              if (_currentSong?.id != targetSong.id) return;
+              await _player.play();
+              started = true;
+              debugPrint('Successfully playing "${song.title}" via Piped proxy fallback');
+            }
+          } catch (e) {
+            debugPrint('[AudioHandler] Piped proxy fallback error for "${song.title}": $e');
+          }
         }
       }
 

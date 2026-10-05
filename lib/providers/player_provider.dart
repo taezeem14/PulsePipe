@@ -153,14 +153,9 @@ class PlayerProvider extends ChangeNotifier {
         _consecutiveStreamFailures++;
         StreamResolverService.invalidateCache(failedSong.id);
         YouTubeImporterService.invalidateCache(failedSong.id);
-        if (_consecutiveStreamFailures < _maxConsecutiveFailures && _queue.isNotEmpty && (_currentIndex < _queue.length - 1 || _isAutoplayEnabled)) {
-          debugPrint('[PlayerProvider] Automatically skipping to next track after stream failure...');
-          skipNext(isAuto: true);
-        } else {
-          _isPlaying = false;
-          _isLoadingStream = false;
-          notifyListeners();
-        }
+        _isPlaying = false;
+        _isLoadingStream = false;
+        notifyListeners();
       },
     );
 
@@ -230,11 +225,19 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _handleSongCompleted() async {
-    // Guard against infinite skip loops when consecutive songs fail to load
-    if (_consecutiveStreamFailures >= _maxConsecutiveFailures) {
-      debugPrint('Stopping auto-advance: $_consecutiveStreamFailures consecutive stream failures');
+    // Guard against premature / corrupted completions
+    if (_position.inSeconds < 5 && _duration.inSeconds > 15) {
+      _consecutiveStreamFailures++;
+      debugPrint('[PlayerProvider] Track completed prematurely at ${_position.inSeconds}s (duration: ${_duration.inSeconds}s). Failure count: $_consecutiveStreamFailures');
+      if (_consecutiveStreamFailures >= _maxConsecutiveFailures) {
+        debugPrint('[PlayerProvider] Halting auto-advance due to repeated premature completions.');
+        _isPlaying = false;
+        _isLoadingStream = false;
+        notifyListeners();
+        return;
+      }
+    } else {
       _consecutiveStreamFailures = 0;
-      return;
     }
 
     if (_repeatMode == 'one') {
@@ -590,6 +593,7 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0, Song? targetSong}) async {
     final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
     if (validTracks.isEmpty) return;
+    _consecutiveStreamFailures = 0;
     _queue = List.from(validTracks);
     if (targetSong != null) {
       final targetIdx = _queue.indexWhere((s) => s.id == targetSong.id);

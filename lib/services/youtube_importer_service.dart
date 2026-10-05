@@ -174,20 +174,20 @@ class YouTubeImporterService {
       final manifest = await _yt.videos.streamsClient.getManifest(
         cleanId,
         requireWatchPage: false,
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 8));
       final candidates = <String>[];
 
-      // High-speed NewPipe audio stream prioritization:
-      // 1. Primary: WebM Opus (itag 251, ~160kbps) — NewPipe preferred low-latency audio stream
-      final webmAudio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'webm').toList();
-      if (webmAudio.isNotEmpty) {
-        candidates.add(webmAudio.withHighestBitrate().url.toString());
-      }
-
-      // 2. Secondary: MP4 / M4A AAC (itag 140, ~128kbps) — rock-solid hardware fallback
+      // High-speed NewPipe audio stream prioritization for Android:
+      // 1. Primary: MP4 / M4A AAC (itag 140, ~128kbps) — instant dedicated hardware DSP decoding on Qualcomm/MediaTek
       final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
       if (mp4Audio.isNotEmpty) {
         candidates.add(mp4Audio.withHighestBitrate().url.toString());
+      }
+
+      // 2. Secondary: WebM Opus (itag 251, ~160kbps) — high-fidelity audio stream fallback
+      final webmAudio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'webm').toList();
+      if (webmAudio.isNotEmpty) {
+        candidates.add(webmAudio.withHighestBitrate().url.toString());
       }
 
       // 3. Tertiary: Muxed MP4 fallback (if audio-only streams unavailable)

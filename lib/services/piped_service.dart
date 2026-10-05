@@ -13,6 +13,8 @@ class PipedService {
   PipedService._();
 
   static const _instances = [
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.privacydev.net',
     'https://pipedapi.in.projectsegfau.lt',
     'https://pipedapi.ducks.party',
     'https://pipedapi.drgns.space',
@@ -39,7 +41,7 @@ class PipedService {
         final url = Uri.parse('$instance/streams/$videoId');
         final resp = await http.get(url, headers: {
           'Accept': 'application/json',
-        }).timeout(const Duration(milliseconds: 2000));
+        }).timeout(const Duration(seconds: 4));
 
         if (resp.statusCode != 200) continue;
 
