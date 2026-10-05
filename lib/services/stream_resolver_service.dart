@@ -26,7 +26,7 @@ class StreamResolverService {
     return cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inHours < 4;
   }
 
-  /// Prefetch playable audio stream for a track in the background
+  /// Prefetch playable audio stream for a track in the background (WINDOW_SIZE = 1)
   static void prefetchPlayableStreams(Song song) {
     if (isPreloaded(song) || _currentlyPreloading.contains(song.id)) return;
     _currentlyPreloading.add(song.id);
@@ -38,34 +38,23 @@ class StreamResolverService {
     });
   }
 
-  /// Proactively preloads an entire list of songs in parallel background batches
-  /// (e.g. all songs in a playlist, top trending, or search results)
-  static void preloadSongs(List<Song> songs, {int maxCount = 15}) {
-    final targets = songs.take(maxCount).where((s) => !isPreloaded(s) && !_currentlyPreloading.contains(s.id)).toList();
-    if (targets.isEmpty) return;
+  /// NewPipe WINDOW_SIZE = 1 preloader:
+  /// Preloads ONLY the immediate next track in the queue sequentially,
+  /// avoiding YouTube connection choking, socket saturation, and rate-limiting.
+  static void preloadNextSong(Song? nextSong) {
+    if (nextSong == null) return;
+    prefetchPlayableStreams(nextSong);
+  }
 
-    Future.microtask(() async {
-      // Process in concurrent batches of 3 to resolve quickly without network choking
-      const batchSize = 3;
-      for (int i = 0; i < targets.length; i += batchSize) {
-        final end = (i + batchSize < targets.length) ? i + batchSize : targets.length;
-        final batch = targets.sublist(i, end);
-        for (final s in batch) {
-          _currentlyPreloading.add(s.id);
-        }
-        await Future.wait(
-          batch.map((song) async {
-            try {
-              await resolvePlayableStreamCandidates(song);
-            } catch (e) {
-              debugPrint('[StreamResolverService] Batch preload error for "${song.title}": $e');
-            } finally {
-              _currentlyPreloading.remove(song.id);
-            }
-          }),
-        );
+  /// Safe preload: only prefetches at most 1 single next un-cached song
+  static void preloadSongs(List<Song> songs, {int maxCount = 1}) {
+    if (songs.isEmpty) return;
+    for (final song in songs) {
+      if (!isPreloaded(song) && !_currentlyPreloading.contains(song.id)) {
+        preloadNextSong(song);
+        break;
       }
-    });
+    }
   }
 
   /// Normalizes title string by stripping noise words

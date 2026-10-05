@@ -47,3 +47,4 @@ app.*.map.json
 # Local temporary research and backups
 /newpipe_repo/
 /lib_prev/
+*.apk

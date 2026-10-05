@@ -3,6 +3,7 @@ import 'package:spotify_newpipe/models/song.dart';
 import 'package:spotify_newpipe/models/playlist.dart';
 import 'package:spotify_newpipe/services/sponsorblock_service.dart';
 import 'package:spotify_newpipe/services/youtube_importer_service.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   group('PulsePipe Music Architecture Tests', () {
@@ -123,6 +124,32 @@ void main() {
       expect(pl.title, 'Dynamic Test');
       expect(pl.songs.length, 1);
       expect(pl.songs.first.title, 'Track One');
+    });
+
+    test('NewPipe stream resolver extracts high-speed audio candidates', () async {
+      final urls = await YouTubeImporterService.getAudioStreamUrls('dQw4w9WgXcQ');
+      expect(urls, isNotEmpty);
+      expect(urls.length, lessThanOrEqualTo(3)); // Streamlined to top Opus/AAC candidates
+
+      final client = http.Client();
+      try {
+        final resp = await client.get(
+          Uri.parse(urls.first),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+            'Range': 'bytes=0-65535',
+            'Origin': 'https://www.youtube.com',
+            'Referer': 'https://www.youtube.com/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'cross-site',
+          },
+        );
+        expect(resp.statusCode, inInclusiveRange(200, 206));
+        expect(resp.bodyBytes.length, greaterThan(0));
+      } finally {
+        client.close();
+      }
     });
   });
 }

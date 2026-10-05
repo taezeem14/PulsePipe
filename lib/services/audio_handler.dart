@@ -306,11 +306,16 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           await _player.setUrl(
             url,
             headers: const {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+              'Origin': 'https://www.youtube.com',
+              'Referer': 'https://www.youtube.com/',
+              'Sec-Fetch-Dest': 'empty',
+              'Sec-Fetch-Mode': 'cors',
+              'Sec-Fetch-Site': 'cross-site',
             },
             initialPosition: Duration.zero,
             preload: true,
-          );
+          ).timeout(const Duration(seconds: 4));
           if (_currentSong?.id != targetSong.id) return; // Superseded during network connect
           await _player.play();
           started = true;
