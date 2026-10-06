@@ -76,7 +76,7 @@ class _PulsePipeLibraryTabState extends State<PulsePipeLibraryTab> {
           ),
         ],
       ),
-    );
+    ).then((_) => controller.dispose());
   }
 
   void _showImportUrlDialog(BuildContext context, PlayerProvider player) {
@@ -152,7 +152,7 @@ class _PulsePipeLibraryTabState extends State<PulsePipeLibraryTab> {
           ),
         ],
       ),
-    );
+    ).then((_) => controller.dispose());
   }
 
   void _showAddMenu(BuildContext context, PlayerProvider player) {
@@ -540,14 +540,7 @@ class _PulsePipeLibraryTabState extends State<PulsePipeLibraryTab> {
                                 ),
                                 IconButton(
                                   icon: const FaIcon(FontAwesomeIcons.ellipsisVertical, size: 14, color: EmberColors.textMuted),
-                                  onPressed: () {
-                                    showModalBottomSheet(
-                                      context: context,
-                                      backgroundColor: Colors.transparent,
-                                      isScrollControlled: true,
-                                      builder: (_) => TrackOptionsSheet(song: song),
-                                    );
-                                  },
+                                  onPressed: () => TrackOptionsSheet.show(context, song),
                                 ),
                               ],
                             ),

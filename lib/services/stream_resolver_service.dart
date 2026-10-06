@@ -18,6 +18,11 @@ class StreamResolverService {
     _resolvedCache.remove(key);
   }
 
+  /// Clears all stream caches across the application
+  static void clearAllCaches() {
+    _resolvedCache.clear();
+  }
+
   static final Set<String> _currentlyPreloading = {};
 
   /// Checks if a song has already been pre-resolved into memory cache

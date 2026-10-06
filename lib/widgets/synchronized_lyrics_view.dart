@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
@@ -16,15 +17,23 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
   final ScrollController _scrollController = ScrollController();
   int _lastIndex = -1;
   bool _userScrolling = false;
+  Timer? _userScrollTimer;
 
   @override
   void dispose() {
+    _userScrollTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _scrollToIndex(int index, int totalLines) {
-    if (!_scrollController.hasClients || _userScrolling || index < 0 || index >= totalLines) return;
+    if (!_scrollController.hasClients ||
+        !_scrollController.position.hasContentDimensions ||
+        _userScrolling ||
+        index < 0 ||
+        index >= totalLines) {
+      return;
+    }
 
     const lineEstimate = 52.0;
     final screenHeight = _scrollController.position.viewportDimension;
@@ -99,8 +108,10 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
         onNotification: (notif) {
           if (notif.direction != ScrollDirection.idle) {
             _userScrolling = true;
+            _userScrollTimer?.cancel();
           } else {
-            Future.delayed(const Duration(seconds: 3), () {
+            _userScrollTimer?.cancel();
+            _userScrollTimer = Timer(const Duration(seconds: 3), () {
               if (mounted) _userScrolling = false;
             });
           }

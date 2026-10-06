@@ -330,14 +330,7 @@ class _PulsePipeSearchTabState extends State<PulsePipeSearchTab> {
                                       targetSong: song,
                                     );
                                   },
-                                  onOptions: () {
-                                    showModalBottomSheet(
-                                      context: context,
-                                      backgroundColor: Colors.transparent,
-                                      isScrollControlled: true,
-                                      builder: (_) => TrackOptionsSheet(song: song),
-                                    );
-                                  },
+                                  onOptions: () => TrackOptionsSheet.show(context, song),
                                 );
                               },
                               childCount: searchResultsSnapshot.length,
@@ -435,6 +428,8 @@ class _GenreCard extends StatelessWidget {
             children: [
               Text(
                 category.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 15,

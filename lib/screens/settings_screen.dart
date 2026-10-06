@@ -293,6 +293,15 @@ class SettingsContent extends StatelessWidget {
                 content: Text('Cleaning storage and purging old cache...', style: TextStyle(color: EmberColors.primaryAmber)),
               ),
             );
+            await player.purgePlaceholders();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  backgroundColor: EmberColors.surfaceContainerHigh,
+                  content: Text('Storage cleaned & cache flushed successfully!', style: TextStyle(color: EmberColors.primaryAmberHi)),
+                ),
+              );
+            }
           },
         ),
 

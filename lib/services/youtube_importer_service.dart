@@ -94,6 +94,11 @@ class YouTubeImporterService {
     _streamCache.remove(cleanId);
   }
 
+  /// Clears all stream caches across the application
+  static void clearAllCaches() {
+    _streamCache.clear();
+  }
+
   /// Smart YouTube metadata cleaner: extracts true song title, artist, and clean search query
   static ({String cleanTitle, String cleanArtist, String searchQuery}) parseYouTubeMetadata(String rawTitle, String rawAuthor) {
     var t = rawTitle

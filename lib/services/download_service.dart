@@ -126,24 +126,34 @@ class DownloadService {
       }
 
       final dir = await _getMediaDirectory(isVideo: false);
-      final safeTitle = _sanitizeFilename('${song.title} - ${song.artist}');
+      final sanitized = _sanitizeFilename('${song.title} - ${song.artist}').trim();
+      final safeTitle = sanitized.isNotEmpty ? sanitized : 'track_${song.id}';
       final ext = audioStreamInfo.container.name.toLowerCase() == 'mp4' ? 'm4a' : audioStreamInfo.container.name.toLowerCase();
       final file = File('${dir.path}/$safeTitle.$ext');
 
       final stream = yt.videos.streamsClient.get(audioStreamInfo);
-      final output = file.openWrite();
-      var received = 0;
-      final total = audioStreamInfo.size.totalBytes;
+      IOSink? output;
+      try {
+        output = file.openWrite();
+        var received = 0;
+        final total = audioStreamInfo.size.totalBytes;
 
-      await for (final chunk in stream) {
-        output.add(chunk);
-        received += chunk.length;
-        final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
-        _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
-        _progressController.add(_activeDownloads[songId]!);
+        await for (final chunk in stream.timeout(const Duration(seconds: 30))) {
+          output.add(chunk);
+          received += chunk.length;
+          final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
+          _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
+          _progressController.add(_activeDownloads[songId]!);
+        }
+        await output.flush();
+      } catch (e) {
+        if (await file.exists()) {
+          try { await file.delete(); } catch (_) {}
+        }
+        rethrow;
+      } finally {
+        await output?.close();
       }
-      await output.flush();
-      await output.close();
 
       // Record in storage as downloaded
       final downloadedSong = song.copyWith(
@@ -180,6 +190,10 @@ class DownloadService {
   /// Download MP4 Video directly to device Movies/Ember folder
   static Future<String?> downloadVideo(Song song) async {
     final videoIdKey = 'video_${song.id}';
+    if (_activeDownloads[videoIdKey]?.isCompleted == false && _activeDownloads[videoIdKey]?.isFailed == false) {
+      return null; // Already downloading
+    }
+
     _activeDownloads[videoIdKey] = DownloadProgress(songId: videoIdKey, progress: 0.0, isVideo: true);
     _progressController.add(_activeDownloads[videoIdKey]!);
 
@@ -208,28 +222,38 @@ class DownloadService {
       }
 
       final dir = await _getMediaDirectory(isVideo: true);
-      final safeTitle = _sanitizeFilename('${song.title} - ${song.artist}');
+      final sanitized = _sanitizeFilename('${song.title} - ${song.artist}').trim();
+      final safeTitle = sanitized.isNotEmpty ? sanitized : 'video_${song.id}';
       final file = File('${dir.path}/$safeTitle.mp4');
 
       final stream = yt.videos.streamsClient.get(streamInfo);
-      final output = file.openWrite();
-      var received = 0;
-      final total = streamInfo.size.totalBytes;
+      IOSink? output;
+      try {
+        output = file.openWrite();
+        var received = 0;
+        final total = streamInfo.size.totalBytes;
 
-      await for (final chunk in stream) {
-        output.add(chunk);
-        received += chunk.length;
-        final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
-        _activeDownloads[videoIdKey] = DownloadProgress(
-          songId: videoIdKey,
-          progress: prog,
-          isVideo: true,
-        );
-        _progressController.add(_activeDownloads[videoIdKey]!);
+        await for (final chunk in stream.timeout(const Duration(seconds: 30))) {
+          output.add(chunk);
+          received += chunk.length;
+          final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
+          _activeDownloads[videoIdKey] = DownloadProgress(
+            songId: videoIdKey,
+            progress: prog,
+            isVideo: true,
+          );
+          _progressController.add(_activeDownloads[videoIdKey]!);
+        }
+
+        await output.flush();
+      } catch (e) {
+        if (await file.exists()) {
+          try { await file.delete(); } catch (_) {}
+        }
+        rethrow;
+      } finally {
+        await output?.close();
       }
-
-      await output.flush();
-      await output.close();
 
       _activeDownloads[videoIdKey] = DownloadProgress(
         songId: videoIdKey,

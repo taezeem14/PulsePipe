@@ -31,7 +31,7 @@ class PlaylistDetailSheet extends StatelessWidget {
       totalSec += s.duration.inSeconds;
     }
     final mins = totalSec ~/ 60;
-    if (mins > 60) {
+    if (mins >= 60) {
       final hours = mins ~/ 60;
       final remMins = mins % 60;
       return '${hours}h ${remMins}m';

@@ -47,36 +47,44 @@ class SoundShapingSheet extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: EmberColors.primaryAmber.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: EmberColors.primaryAmber.withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const FaIcon(FontAwesomeIcons.sliders, size: 16, color: EmberColors.primaryAmber),
                         ),
-                        child: const FaIcon(FontAwesomeIcons.sliders, size: 16, color: EmberColors.primaryAmber),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Sound Shaping & EQ',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: EmberColors.textPrimary,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Sound Shaping & EQ',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: EmberColors.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                'Analog Warmth & Multi-Band DSP',
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: EmberColors.textMuted,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
-                          Text(
-                            'Analog Warmth & Multi-Band DSP',
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: EmberColors.textMuted,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
                   Row(
                     children: [
@@ -224,6 +232,9 @@ class _BandSliderState extends State<_BandSlider> {
   Widget build(BuildContext context) {
     final freq = widget.band.centerFrequency;
     final freqStr = freq >= 1000 ? '${(freq / 1000).toStringAsFixed(1)} kHz' : '${freq.round()} Hz';
+    final minDb = widget.minDecibels.isFinite ? widget.minDecibels : -12.0;
+    final maxDb = widget.maxDecibels.isFinite && widget.maxDecibels > minDb ? widget.maxDecibels : 12.0;
+    final safeGain = _gain.isFinite ? _gain.clamp(minDb, maxDb) : 0.0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -246,9 +257,9 @@ class _BandSliderState extends State<_BandSlider> {
                 inactiveTrackColor: EmberColors.surfaceContainerHigh,
               ),
               child: Slider(
-                value: _gain.clamp(widget.minDecibels, widget.maxDecibels),
-                min: widget.minDecibels,
-                max: widget.maxDecibels,
+                value: safeGain,
+                min: minDb,
+                max: maxDb,
                 onChanged: (val) {
                   setState(() => _gain = val);
                   widget.onChanged(val);

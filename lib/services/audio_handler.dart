@@ -58,6 +58,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   String _currentPreset = 'Flat';
 
   List<SponsorSegment> _activeSponsorSegments = [];
+  final Set<String> _skippedSegmentKeys = {};
   bool _isSkippingSponsor = false;
 
   /// NewPipe YouTube streaming headers for ExoPlayer HTTP data source
@@ -189,6 +190,13 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       );
     });
 
+    // Synchronize mediaItem duration dynamically when ExoPlayer resolves stream duration
+    _player.durationStream.listen((dur) {
+      if (dur != null && mediaItem.value != null && mediaItem.value!.duration != dur) {
+        mediaItem.add(mediaItem.value!.copyWith(duration: dur));
+      }
+    });
+
     // Auto-advance when song finishes (guarded to fire only when track genuinely started and completed playback)
     _player.playerStateStream.listen((state) {
       LogService.instance.recordExoState('${state.processingState.name} (playing: ${state.playing})');
@@ -208,13 +216,20 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         }
         final isNearEnd = pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85);
         if (!isNearEnd) {
-          debugPrint('[AudioHandler] Premature completion event ignored (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
+          debugPrint('[AudioHandler] Premature completion event detected (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
+          _currentTrackActive = false;
+          _completionHandled = true;
+          if (_currentSong != null) {
+            _onPlaybackFailed?.call(_currentSong!);
+          }
           return;
         }
         _currentTrackActive = false;
         _completionHandled = true;
         debugPrint('[AudioHandler] Track "${_currentSong?.title}" completed playback cleanly. Invoking onCompleted.');
-        _onCompleted?.call();
+        _onCompleted?.call().catchError((e) {
+          debugPrint('[AudioHandler] Error in _onCompleted callback: $e');
+        });
       }
     });
 
@@ -228,9 +243,14 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         for (final segment in _activeSponsorSegments) {
           // Never skip near the very end of the song (prevents premature track completion)
           if (totalSec > 20.0 && segment.end >= (totalSec - 4.0)) continue;
-          if (segment.start < 12.0) continue;
+          if (segment.end <= segment.start) continue;
+          
+          final segmentKey = '${segment.start.toStringAsFixed(1)}_${segment.end.toStringAsFixed(1)}';
+          if (_skippedSegmentKeys.contains(segmentKey)) continue;
+
           if (currentSec >= segment.start && currentSec < (segment.end - 0.3)) {
             _isSkippingSponsor = true;
+            _skippedSegmentKeys.add(segmentKey);
             debugPrint('SponsorBlock: auto-skipping ${segment.category} [${segment.start}s - ${segment.end}s]');
             final seekTarget = Duration(milliseconds: (segment.end * 1000).toInt() + 150);
             _player.seek(seekTarget).then((_) {
@@ -307,7 +327,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
     try {
       final s = song.streamUrl;
-      final isLocal = s.startsWith('/') || s.startsWith('file://');
+      final isLocal = s.startsWith('/') || s.startsWith('file://') || RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(s);
 
       if (isLocal) {
         var localPath = s.replaceFirst('file://', '');
@@ -317,12 +337,13 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         final file = File(localPath);
         if (await file.exists()) {
           await _player.setFilePath(localPath, initialPosition: Duration.zero, preload: true);
+          if (_currentSong?.id != song.id) return;
+          await _player.play();
+          return;
         } else {
-          await _player.setUrl(s, initialPosition: Duration.zero, preload: true);
+          // File does not exist locally anymore; fall through to online stream resolver
+          LogService.w('AudioHandler', 'Local file not found at $localPath, falling through to online resolver');
         }
-        if (_currentSong?.id != song.id) return;
-        await _player.play();
-        return;
       }
 
       // Online pure YouTube stream resolution via NewPipe extractor
@@ -339,6 +360,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
       bool started = false;
       for (int i = 0; i < candidates.length; i++) {
+        if (_currentSong?.id != targetSong.id) return; // Superseded by newer track selection
         final url = candidates[i];
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
@@ -383,7 +405,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
 
       // Tier 2 Fallback: If all direct YouTube candidate streams fail, try Piped audio proxy
-      if (!started) {
+      if (!started && _currentSong?.id == targetSong.id) {
         final videoId = song.id.startsWith('yt_')
             ? song.id.replaceFirst('yt_', '')
             : YouTubeImporterService.extractVideoId(song.streamUrl);
@@ -412,6 +434,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
 
       if (!started) {
+        if (_currentSong?.id != targetSong.id) return; // Superseded by newer track selection
         debugPrint('All stream candidates failed for "${song.title}". Halting playback gracefully.');
         LogService.instance.recordPlaybackFailure(song, 'All stream candidates exhausted (failed to connect or decode audio)');
         StreamResolverService.invalidateCache(song.id);
@@ -426,6 +449,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         return;
       }
     } catch (e, st) {
+      if (_currentSong?.id != song.id) return; // Superseded by newer track selection
       debugPrint('Playback error: $e');
       LogService.instance.recordPlaybackFailure(song, e, st);
       StreamResolverService.invalidateCache(song.id);
@@ -602,6 +626,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   @override
   Future<void> stop() async {
     _currentSong = null;
+    _currentTrackActive = false;
+    _completionHandled = true;
+    _isSkippingSponsor = false;
+    _activeSponsorSegments = [];
+    _skippedSegmentKeys.clear();
     mediaItem.add(null);
     playbackState.add(
       playbackState.value.copyWith(

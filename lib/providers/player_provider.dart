@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
@@ -63,6 +64,7 @@ class PlayerProvider extends ChangeNotifier {
   int _sleepSecondsRemaining = 0;
   Timer? _searchDebounce;
   bool _isSearching = false;
+  bool _isReplenishingQueue = false;
 
   StreamSubscription? _posSub;
   StreamSubscription? _durSub;
@@ -155,6 +157,7 @@ class PlayerProvider extends ChangeNotifier {
         debugPrint('[PlayerProvider] Stream failed for: ${failedSong.title}');
         _consecutiveStreamFailures++;
         _lastFailedSong = failedSong;
+        playbackErrorNotifier.value = null;
         playbackErrorNotifier.value = failedSong;
         StreamResolverService.invalidateCache(failedSong.id);
         YouTubeImporterService.invalidateCache(failedSong.id);
@@ -309,19 +312,26 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _replenishQueueIfNeeded() async {
-    if (!_isAutoplayEnabled) return;
+    if (!_isAutoplayEnabled || _isReplenishingQueue) return;
     if (_queue.length - _currentIndex <= 3) {
-      final seedSong = currentSong ?? (_queue.isNotEmpty ? _queue.last : null);
-      if (seedSong != null) {
-        try {
+      _isReplenishingQueue = true;
+      try {
+        final seedSong = currentSong ?? (_queue.isNotEmpty ? _queue.last : null);
+        if (seedSong != null) {
           final more = await CatalogService.fetchRecommendations(seedSong, limit: 15);
           final existingIds = _queue.map((s) => s.id).toSet();
           final newTracks = more.where((s) => !existingIds.contains(s.id) && !Song.isPlaceholder(s)).toList();
           if (newTracks.isNotEmpty) {
             _queue.addAll(newTracks);
+            if (_isShuffle) {
+              _unshuffledQueue.addAll(newTracks);
+            }
             notifyListeners();
           }
-        } catch (_) {}
+        }
+      } catch (_) {
+      } finally {
+        _isReplenishingQueue = false;
       }
     }
   }
@@ -431,7 +441,11 @@ class PlayerProvider extends ChangeNotifier {
       await _audioHandler.pause();
     } else {
       if (currentSong != null) {
-        await _audioHandler.play();
+        if (_audioHandler.currentSong == null) {
+          await playSong(currentSong!);
+        } else {
+          await _audioHandler.play();
+        }
       } else if (_queue.isNotEmpty) {
         await playSong(_queue[0]);
       }
@@ -456,14 +470,12 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-
-
   Future<void> skipNext({bool isAuto = false}) async {
     if (!isAuto) {
       _consecutiveStreamFailures = 0;
     }
     if (_queue.isEmpty) return;
-    if (_repeatMode == 'one') {
+    if (_repeatMode == 'one' && isAuto) {
       await _audioHandler.seek(Duration.zero);
       await _audioHandler.play();
       return;
@@ -553,7 +565,6 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> _loadInitialDiscoveryTracks() async {
     _activeCategory = 'trending';
     _isSearching = true;
-    notifyListeners();
     try {
       final trending = await CatalogService.fetchTrendingTracks();
       final nonPlaceholders = trending.where((s) => !Song.isPlaceholder(s)).toList();
@@ -614,6 +625,9 @@ class PlayerProvider extends ChangeNotifier {
     final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
     if (validTracks.isEmpty) return;
     _queue.addAll(validTracks);
+    if (_isShuffle) {
+      _unshuffledQueue.addAll(validTracks);
+    }
     notifyListeners();
   }
 
@@ -658,9 +672,7 @@ class PlayerProvider extends ChangeNotifier {
         final results = await CatalogService.searchOnline(trimmed, limit: 35);
 
         if (_searchQuery == query) {
-          if (results.isNotEmpty) {
-            _searchResults = results;
-          }
+          _searchResults = results;
           _isSearching = false;
           notifyListeners();
         }
@@ -683,19 +695,28 @@ class PlayerProvider extends ChangeNotifier {
     }
     final targetIdx = (_currentIndex + 1).clamp(0, _queue.length);
     _queue.insert(targetIdx, song);
+    if (_isShuffle && !_unshuffledQueue.any((s) => s.id == song.id)) {
+      _unshuffledQueue.add(song);
+    }
     notifyListeners();
   }
 
   void addToQueue(Song song) {
     if (!_queue.any((s) => s.id == song.id)) {
       _queue.add(song);
+      if (_isShuffle && !_unshuffledQueue.any((s) => s.id == song.id)) {
+        _unshuffledQueue.add(song);
+      }
       notifyListeners();
     }
   }
 
   void removeTrackAt(int index) {
     if (index < 0 || index >= _queue.length) return;
-    _queue.removeAt(index);
+    final removed = _queue.removeAt(index);
+    if (_isShuffle) {
+      _unshuffledQueue.removeWhere((s) => s.id == removed.id);
+    }
 
     if (index == _currentIndex) {
       if (_queue.isEmpty) {
@@ -713,9 +734,11 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
+    if (newIndex < 0 || newIndex >= _queue.length) return;
     final cur = currentSong;
     final item = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, item);
@@ -729,8 +752,10 @@ class PlayerProvider extends ChangeNotifier {
   void clearQueue() {
     final cur = currentSong;
     _queue.clear();
+    _unshuffledQueue.clear();
     if (cur != null) {
       _queue.add(cur);
+      _unshuffledQueue.add(cur);
       _currentIndex = 0;
     } else {
       _currentIndex = 0;
@@ -821,8 +846,45 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> deleteDownload(String songId) async {
-    _downloads.removeWhere((s) => s.id == songId);
+    final idx = _downloads.indexWhere((s) => s.id == songId);
+    if (idx != -1) {
+      final songToRemove = _downloads[idx];
+      if (songToRemove.streamUrl.isNotEmpty) {
+        try {
+          var filePath = songToRemove.streamUrl.replaceFirst('file://', '');
+          if (Platform.isWindows && filePath.startsWith('/') && filePath.length > 2 && filePath[2] == ':') {
+            filePath = filePath.substring(1);
+          }
+          final file = File(filePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          debugPrint('Error deleting download file: $e');
+        }
+      }
+      _downloads.removeAt(idx);
+      await _storageService.saveDownloads(_downloads);
+      notifyListeners();
+    }
+  }
+
+  /// Purges any legacy mock/placeholder tracks from all storage lists and flushes stream caches
+  Future<void> purgePlaceholders() async {
+    _favorites = _favorites.where((s) => !Song.isPlaceholder(s)).toList();
+    _history = _history.where((s) => !Song.isPlaceholder(s)).toList();
+    _downloads = _downloads.where((s) => !Song.isPlaceholder(s)).toList();
+    _queue = _queue.where((s) => !Song.isPlaceholder(s)).toList();
+    _unshuffledQueue = _unshuffledQueue.where((s) => !Song.isPlaceholder(s)).toList();
+    _playlists = _playlists
+        .map((p) => p.copyWith(songs: p.songs.where((s) => !Song.isPlaceholder(s)).toList()))
+        .toList();
+    await _storageService.saveFavorites(_favorites);
+    await _storageService.saveHistory(_history);
     await _storageService.saveDownloads(_downloads);
+    await _storageService.savePlaylists(_playlists);
+    StreamResolverService.clearAllCaches();
+    YouTubeImporterService.clearAllCaches();
     notifyListeners();
   }
 

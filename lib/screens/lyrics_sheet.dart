@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/song.dart';
+import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/synchronized_lyrics_view.dart';
 
@@ -19,6 +21,7 @@ class LyricsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activeSong = context.watch<PlayerProvider>().currentSong ?? song;
     return Container(
       height: MediaQuery.of(context).size.height * 0.75,
       decoration: const BoxDecoration(
@@ -54,7 +57,7 @@ class LyricsSheet extends StatelessWidget {
                             ),
                       ),
                       Text(
-                        '${song.title} • ${song.artist}',
+                        '${activeSong.title} • ${activeSong.artist}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: EmberColors.textMuted,
                             ),

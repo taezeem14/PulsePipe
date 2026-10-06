@@ -120,7 +120,7 @@ class StorageService {
   }
 
   Future<void> saveHistory(List<Song> songs) async {
-    final cleaned = songs.where((s) => !Song.isPlaceholder(s)).take(50).toList();
+    final cleaned = songs.where((s) => !Song.isPlaceholder(s)).take(200).toList();
     _memHistory.clear();
     _memHistory.addAll(cleaned);
     if (_prefs != null) {

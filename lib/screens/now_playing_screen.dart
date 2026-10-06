@@ -9,6 +9,7 @@ import '../widgets/vinyl_disc.dart';
 import '../widgets/synchronized_lyrics_view.dart';
 import 'sound_shaping_sheet.dart';
 import 'track_options_sheet.dart';
+import 'queue_discovery_screen.dart';
 
 class NowPlayingScreen extends StatefulWidget {
   const NowPlayingScreen({super.key});
@@ -86,25 +87,30 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                     icon: const FaIcon(FontAwesomeIcons.chevronDown, size: 20, color: EmberColors.textPrimary),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                  Column(
-                    children: [
-                      Text(
-                        'PLAYING FROM',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: EmberColors.textMuted,
-                              letterSpacing: 1.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        player.activeCategory.replaceAll('_', ' ').toUpperCase(),
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: EmberColors.primaryAmber,
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                    ],
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'PLAYING FROM',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: EmberColors.textMuted,
+                                letterSpacing: 1.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          player.activeCategory.replaceAll('_', ' ').toUpperCase(),
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: EmberColors.primaryAmber,
+                                fontWeight: FontWeight.bold,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                   // Three Dots Menu -> Opens comprehensive Track Options Bottom Sheet
                   IconButton(
@@ -144,10 +150,12 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                           onTap: () => setState(() => _showLyrics = true),
                           child: AmbientGlow(
                             isPlaying: player.isPlaying,
-                            child: SizedBox(
-                              width: 290,
-                              height: 250,
-                              child: Stack(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: SizedBox(
+                                width: 290,
+                                height: 250,
+                                child: Stack(
                                 alignment: Alignment.centerLeft,
                                 children: [
                                   // Vinyl disc peek from right
@@ -193,8 +201,9 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                           ),
                         ),
                       ),
-              ),
-            ),
+                    ),
+                  ),
+                ),
 
             // Title, Artist, and Favorite
             Padding(
@@ -368,51 +377,61 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
             // Bottom Utility Action Pills (Lyrics Toggle, EQ, Speed, Sleep, Queue)
             Padding(
               padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16, top: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // Direct In-Player Lyrics Toggle Pill
-                  _PillAction(
-                    icon: FontAwesomeIcons.alignLeft,
-                    label: _showLyrics ? 'Cover' : 'Lyrics',
-                    active: _showLyrics,
-                    onTap: () => setState(() => _showLyrics = !_showLyrics),
-                  ),
-                  // EQ Sound Shaping Pill
-                  _PillAction(
-                    icon: FontAwesomeIcons.sliders,
-                    label: player.eqPreset.split(' ').first,
-                    active: player.eqEnabled,
-                    onTap: () => SoundShapingSheet.show(context),
-                  ),
-                  // Sleep Timer
-                  _PillAction(
-                    icon: FontAwesomeIcons.moon,
-                    label: player.sleepSecondsRemaining > 0
-                        ? '${(player.sleepSecondsRemaining / 60).ceil()}m'
-                        : 'Sleep',
-                    active: player.sleepSecondsRemaining > 0,
-                    onTap: () => _showSleepTimerDialog(context, player),
-                  ),
-                  // Playback Speed
-                  _PillAction(
-                    icon: FontAwesomeIcons.gaugeHigh,
-                    label: '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 1 : 2)}x',
-                    active: player.speed != 1.0,
-                    onTap: () {
-                      final speeds = [1.0, 1.25, 1.5, 0.75];
-                      final next = speeds[(speeds.indexOf(player.speed) + 1) % speeds.length];
-                      player.setSpeed(next);
-                    },
-                  ),
-                  // Queue Screen
-                  _PillAction(
-                    icon: FontAwesomeIcons.listUl,
-                    label: 'Queue',
-                    active: false,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Direct In-Player Lyrics Toggle Pill
+                    _PillAction(
+                      icon: FontAwesomeIcons.alignLeft,
+                      label: _showLyrics ? 'Cover' : 'Lyrics',
+                      active: _showLyrics,
+                      onTap: () => setState(() => _showLyrics = !_showLyrics),
+                    ),
+                    const SizedBox(width: 8),
+                    // EQ Sound Shaping Pill
+                    _PillAction(
+                      icon: FontAwesomeIcons.sliders,
+                      label: player.eqPreset.split(' ').first,
+                      active: player.eqEnabled,
+                      onTap: () => SoundShapingSheet.show(context),
+                    ),
+                    const SizedBox(width: 8),
+                    // Sleep Timer
+                    _PillAction(
+                      icon: FontAwesomeIcons.moon,
+                      label: player.sleepSecondsRemaining > 0
+                          ? '${(player.sleepSecondsRemaining / 60).ceil()}m'
+                          : 'Sleep',
+                      active: player.sleepSecondsRemaining > 0,
+                      onTap: () => _showSleepTimerDialog(context, player),
+                    ),
+                    const SizedBox(width: 8),
+                    // Playback Speed
+                    _PillAction(
+                      icon: FontAwesomeIcons.gaugeHigh,
+                      label: '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 1 : 2)}x',
+                      active: player.speed != 1.0,
+                      onTap: () {
+                        final speeds = [1.0, 1.25, 1.5, 0.75];
+                        final next = speeds[(speeds.indexOf(player.speed) + 1) % speeds.length];
+                        player.setSpeed(next);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    // Queue Screen
+                    _PillAction(
+                      icon: FontAwesomeIcons.listUl,
+                      label: 'Queue',
+                      active: false,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const QueueDiscoveryScreen()),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

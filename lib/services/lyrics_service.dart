@@ -37,10 +37,11 @@ class LyricsService {
   static final Map<String, LyricsResult> _cache = {};
 
   static String cleanString(String input) {
-    return input
+    final cleaned = input
         .replaceAll(RegExp(r'\s*[\(\[](feat\.|ft\.|official|video|audio|remastered|lyric video|from|version|bonus|deluxe)[^\)\]]*[\)\]]', caseSensitive: false), '')
         .replaceAll(RegExp(r'\s*-\s*(feat\.|ft\.|official|video|audio|remastered|lyric video|remaster).*$', caseSensitive: false), '')
         .trim();
+    return cleaned.isNotEmpty ? cleaned : input.trim();
   }
 
   static List<LyricLine> parseLrc(String lrcText) {
@@ -145,13 +146,15 @@ class LyricsService {
           final plainStr = data['plainLyrics'] as String? ?? '';
 
           final syncedLines = syncedStr != null ? parseLrc(syncedStr) : <LyricLine>[];
-          final result = LyricsResult(
-            syncedLyrics: syncedLines,
-            plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
-            hasSynced: syncedLines.isNotEmpty,
-          );
-          _cacheLyrics(cacheKey, result);
-          return result;
+          if (syncedLines.isNotEmpty || plainStr.trim().isNotEmpty) {
+            final result = LyricsResult(
+              syncedLyrics: syncedLines,
+              plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
+              hasSynced: syncedLines.isNotEmpty,
+            );
+            _cacheLyrics(cacheKey, result);
+            return result;
+          }
         }
       }
 

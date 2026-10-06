@@ -520,10 +520,10 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
               final isCurrent = player.currentSong?.id == song.id;
 
               return ReorderableDelayedDragStartListener(
-                key: ValueKey('queue_${song.id}_$index'),
+                key: ValueKey('queue_${song.id}_${song.hashCode}'),
                 index: index,
                 child: Dismissible(
-                  key: ValueKey('dismiss_${song.id}_$index'),
+                  key: ValueKey('dismiss_${song.id}_${song.hashCode}'),
                   direction: DismissDirection.endToStart,
                   background: Container(
                     alignment: Alignment.centerRight,
@@ -1186,7 +1186,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
           ),
         );
       },
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   // Generic Song List (Favorites, History, Search)

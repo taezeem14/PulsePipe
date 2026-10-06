@@ -61,6 +61,8 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
             titleSpacing: 16,
             title: Text(
               _getGreeting(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: EmberColors.textPrimary,
                 fontSize: 22,

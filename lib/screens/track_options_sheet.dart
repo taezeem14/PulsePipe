@@ -148,7 +148,7 @@ class TrackOptionsSheet extends StatelessWidget {
           ),
         );
       },
-    );
+    ).then((_) => titleController.dispose());
   }
 
   void _showSpecsDialog(BuildContext context) {
