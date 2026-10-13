@@ -177,6 +177,7 @@ class SoundShapingSheet extends StatelessWidget {
                     children: [
                       for (int i = 0; i < params.bands.length; i++)
                         _BandSlider(
+                          key: ValueKey('band_${i}_${player.eqPreset}_${params.bands[i].gain}'),
                           band: params.bands[i],
                           minDecibels: params.minDecibels,
                           maxDecibels: params.maxDecibels,
@@ -201,6 +202,7 @@ class _BandSlider extends StatefulWidget {
   final ValueChanged<double> onChanged;
 
   const _BandSlider({
+    super.key,
     required this.band,
     required this.minDecibels,
     required this.maxDecibels,
@@ -230,7 +232,10 @@ class _BandSliderState extends State<_BandSlider> {
 
   @override
   Widget build(BuildContext context) {
-    final freq = widget.band.centerFrequency;
+    double freq = widget.band.centerFrequency;
+    if (freq > 20000) {
+      freq = freq / 1000.0;
+    }
     final freqStr = freq >= 1000 ? '${(freq / 1000).toStringAsFixed(1)} kHz' : '${freq.round()} Hz';
     final minDb = widget.minDecibels.isFinite ? widget.minDecibels : -12.0;
     final maxDb = widget.maxDecibels.isFinite && widget.maxDecibels > minDb ? widget.maxDecibels : 12.0;

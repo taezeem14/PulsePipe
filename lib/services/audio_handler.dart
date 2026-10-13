@@ -16,8 +16,8 @@ Future<AudioHandler> initAudioHandler() async {
     return await AudioService.init(
       builder: () => EmberAudioHandler(),
       config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.taezeem.ember.channel.audio',
-        androidNotificationChannelName: 'Ember Music Playback',
+        androidNotificationChannelId: 'com.taezeem.pulsepipe.channel.audio',
+        androidNotificationChannelName: 'PulsePipe Playback',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
         androidNotificationIcon: 'mipmap/ic_launcher',
@@ -41,6 +41,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   late final AudioPlayer _player;
 
   Song? _currentSong;
+  int _playRequestId = 0;
   AsyncCallback? _onSkipNext;
   AsyncCallback? _onSkipPrevious;
   AsyncCallback? _onCompleted;
@@ -70,7 +71,28 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'cross-site',
     'Accept': '*/*',
+    'Range': 'bytes=0-',
   };
+
+  static const Map<String, String> _proxyHeaders = {
+    'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
+    'Accept': '*/*',
+  };
+
+  static String _resolveFilePath(String uriOrPath) {
+    if (uriOrPath.startsWith('file://')) {
+      try {
+        return Uri.parse(uriOrPath).toFilePath(windows: Platform.isWindows);
+      } catch (_) {
+        var raw = Uri.decodeFull(uriOrPath.replaceFirst('file://', ''));
+        if (Platform.isWindows && raw.startsWith('/') && raw.length > 2 && raw[2] == ':') {
+          raw = raw.substring(1);
+        }
+        return raw;
+      }
+    }
+    return uriOrPath;
+  }
 
 
   EmberAudioHandler() {
@@ -158,129 +180,176 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
   void _initAudioStreams() {
     // Broadcast playback state changes
-    _player.playbackEventStream.listen((PlaybackEvent event) {
-      final playing = _player.playing;
-      playbackState.add(
-        playbackState.value.copyWith(
-          controls: [
-            MediaControl.skipToPrevious,
-            if (playing) MediaControl.pause else MediaControl.play,
-            MediaControl.stop,
-            MediaControl.skipToNext,
-          ],
-          systemActions: const {
-            MediaAction.seek,
-            MediaAction.seekForward,
-            MediaAction.seekBackward,
-          },
-          androidCompactActionIndices: const [0, 1, 3],
-          processingState: const {
+    _player.playbackEventStream.listen(
+      (PlaybackEvent event) {
+        final playing = _player.playing;
+        final currentProcessing = playbackState.value.processingState;
+        final exProcessing = _player.processingState;
+
+        AudioProcessingState mappedState;
+        if (exProcessing == ProcessingState.idle && currentProcessing == AudioProcessingState.loading && _currentSong != null) {
+          mappedState = AudioProcessingState.loading;
+        } else {
+          mappedState = const {
             ProcessingState.idle: AudioProcessingState.idle,
             ProcessingState.loading: AudioProcessingState.loading,
             ProcessingState.buffering: AudioProcessingState.buffering,
             ProcessingState.ready: AudioProcessingState.ready,
             ProcessingState.completed: AudioProcessingState.completed,
-          }[_player.processingState] ?? AudioProcessingState.idle,
-          playing: playing,
-          updatePosition: _player.position,
-          bufferedPosition: _player.bufferedPosition,
-          speed: _player.speed,
-          queueIndex: event.currentIndex,
-        ),
-      );
-    });
+          }[exProcessing] ?? AudioProcessingState.idle;
+        }
+
+        playbackState.add(
+          playbackState.value.copyWith(
+            controls: [
+              MediaControl.skipToPrevious,
+              if (playing) MediaControl.pause else MediaControl.play,
+              MediaControl.stop,
+              MediaControl.skipToNext,
+            ],
+            systemActions: const {
+              MediaAction.seek,
+              MediaAction.seekForward,
+              MediaAction.seekBackward,
+            },
+            androidCompactActionIndices: const [0, 1, 3],
+            processingState: mappedState,
+            playing: playing,
+            updatePosition: _player.position,
+            bufferedPosition: _player.bufferedPosition,
+            speed: _player.speed,
+            queueIndex: event.currentIndex,
+          ),
+        );
+      },
+      onError: (Object e, StackTrace st) {
+        LogService.w('AudioHandler', 'playbackEventStream error: $e');
+      },
+    );
 
     // Synchronize mediaItem duration dynamically when ExoPlayer resolves stream duration
-    _player.durationStream.listen((dur) {
-      if (dur != null && mediaItem.value != null && mediaItem.value!.duration != dur) {
-        mediaItem.add(mediaItem.value!.copyWith(duration: dur));
-      }
-    });
+    _player.durationStream.listen(
+      (dur) {
+        if (dur != null && mediaItem.value != null && mediaItem.value!.duration != dur) {
+          mediaItem.add(mediaItem.value!.copyWith(duration: dur));
+        }
+      },
+      onError: (Object e, StackTrace st) {
+        LogService.w('AudioHandler', 'durationStream error: $e');
+      },
+    );
 
     // Auto-advance when song finishes (guarded to fire only when track genuinely started and completed playback)
-    _player.playerStateStream.listen((state) {
-      LogService.instance.recordExoState('${state.processingState.name} (playing: ${state.playing})');
-      if (state.playing && state.processingState == ProcessingState.ready) {
-        _currentTrackActive = true;
-        _completionHandled = false;
-      }
-
-      if (state.processingState == ProcessingState.completed && _currentTrackActive && !_completionHandled) {
-        final total = _player.duration;
-        final pos = _player.position;
-        // Verify track genuinely played near completion (> 85% or within 4s of end)
-        // If total is null or <= 5 seconds, this is a decode/network failure, NOT a genuine completion!
-        if (total == null || total.inSeconds <= 5) {
-          debugPrint('[AudioHandler] Incomplete track playback completion ignored (pos: ${pos.inSeconds}s, total: ${total?.inSeconds}s)');
-          return;
+    _player.playerStateStream.listen(
+      (state) {
+        LogService.instance.recordExoState('${state.processingState.name} (playing: ${state.playing})');
+        if (state.playing && state.processingState == ProcessingState.ready) {
+          _currentTrackActive = true;
+          _completionHandled = false;
         }
-        final isNearEnd = pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85);
-        if (!isNearEnd) {
-          debugPrint('[AudioHandler] Premature completion event detected (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
+
+        if (state.processingState == ProcessingState.completed && _currentTrackActive && !_completionHandled) {
+          final total = _player.duration;
+          final pos = _player.position;
+          // Verify track genuinely played near completion (> 85% or within 4s of end)
+          // If total is null or <= 5 seconds, this is a decode/network failure, NOT a genuine completion!
+          if (total == null || total.inSeconds <= 5) {
+            debugPrint('[AudioHandler] Abnormal completion failure detected (pos: ${pos.inSeconds}s, total: ${total?.inSeconds}s)');
+            _currentTrackActive = false;
+            _completionHandled = true;
+            if (_currentSong != null) {
+              _onPlaybackFailed?.call(_currentSong!);
+            }
+            return;
+          }
+          final isNearEnd = pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85);
+          if (!isNearEnd) {
+            debugPrint('[AudioHandler] Premature completion event detected (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
+            _currentTrackActive = false;
+            _completionHandled = true;
+            if (_currentSong != null) {
+              _onPlaybackFailed?.call(_currentSong!);
+            }
+            return;
+          }
           _currentTrackActive = false;
           _completionHandled = true;
-          if (_currentSong != null) {
-            _onPlaybackFailed?.call(_currentSong!);
-          }
-          return;
+          debugPrint('[AudioHandler] Track "${_currentSong?.title}" completed playback cleanly. Invoking onCompleted.');
+          _onCompleted?.call().catchError((e) {
+            debugPrint('[AudioHandler] Error in _onCompleted callback: $e');
+          });
         }
-        _currentTrackActive = false;
-        _completionHandled = true;
-        debugPrint('[AudioHandler] Track "${_currentSong?.title}" completed playback cleanly. Invoking onCompleted.');
-        _onCompleted?.call().catchError((e) {
-          debugPrint('[AudioHandler] Error in _onCompleted callback: $e');
-        });
-      }
-    });
+      },
+      onError: (Object e, StackTrace st) {
+        LogService.w('AudioHandler', 'playerStateStream error: $e');
+      },
+    );
 
     // SponsorBlock: auto-skip promotional/intro segments during YouTube playback
-    _player.positionStream.listen((pos) {
-      if (_activeSponsorSegments.isNotEmpty && !_isSkippingSponsor) {
-        final currentSec = pos.inMilliseconds / 1000.0;
-        final totalSec = (_player.duration?.inMilliseconds ?? 0) / 1000.0;
-        // Never seek in the first 12 seconds to prevent stalling initial playback
-        if (currentSec < 12.0) return;
-        for (final segment in _activeSponsorSegments) {
-          // Never skip near the very end of the song (prevents premature track completion)
-          if (totalSec > 20.0 && segment.end >= (totalSec - 4.0)) continue;
-          if (segment.end <= segment.start) continue;
-          
-          final segmentKey = '${segment.start.toStringAsFixed(1)}_${segment.end.toStringAsFixed(1)}';
-          if (_skippedSegmentKeys.contains(segmentKey)) continue;
+    _player.positionStream.listen(
+      (pos) {
+        if (_activeSponsorSegments.isNotEmpty && !_isSkippingSponsor) {
+          final currentSec = pos.inMilliseconds / 1000.0;
+          final totalSec = (_player.duration?.inMilliseconds ?? 0) / 1000.0;
+          for (final segment in _activeSponsorSegments) {
+            if (segment.end <= segment.start) continue;
 
-          if (currentSec >= segment.start && currentSec < (segment.end - 0.3)) {
-            _isSkippingSponsor = true;
-            _skippedSegmentKeys.add(segmentKey);
-            debugPrint('SponsorBlock: auto-skipping ${segment.category} [${segment.start}s - ${segment.end}s]');
-            final seekTarget = Duration(milliseconds: (segment.end * 1000).toInt() + 150);
-            _player.seek(seekTarget).then((_) {
-              _isSkippingSponsor = false;
-            }).catchError((_) {
-              _isSkippingSponsor = false;
-            });
-            break;
+            final segmentKey = '${segment.start.toStringAsFixed(1)}_${segment.end.toStringAsFixed(1)}';
+            if (_skippedSegmentKeys.contains(segmentKey)) continue;
+
+            if (currentSec >= segment.start && currentSec < (segment.end - 0.2)) {
+              _isSkippingSponsor = true;
+              _skippedSegmentKeys.add(segmentKey);
+
+              // Handle outro segment reaching track end
+              if (totalSec > 10.0 && segment.end >= (totalSec - 1.5)) {
+                debugPrint('SponsorBlock: Outro reached [${segment.start}s - ${segment.end}s]. Completing track cleanly.');
+                _isSkippingSponsor = false;
+                _onCompleted?.call();
+                return;
+              }
+
+              final targetMs = (segment.end * 1000).toInt() + 100;
+              final maxDurationMs = _player.duration?.inMilliseconds ?? targetMs;
+              final safeTarget = Duration(milliseconds: targetMs.clamp(0, maxDurationMs > 500 ? maxDurationMs - 200 : maxDurationMs));
+
+              debugPrint('SponsorBlock: auto-skipping ${segment.category} [${segment.start}s - ${segment.end}s] to ${safeTarget.inMilliseconds}ms');
+
+              _player.seek(safeTarget).whenComplete(() {
+                _isSkippingSponsor = false;
+              });
+              break;
+            }
           }
         }
-      }
-    });
+      },
+      onError: (Object e, StackTrace st) {
+        LogService.w('AudioHandler', 'positionStream error: $e');
+      },
+    );
   }
 
   Future<void> playSong(Song song) async {
+    final int currentRequestId = ++_playRequestId;
+
     // Reset flags immediately BEFORE touching ExoPlayer so state transitions during stop() cannot fire _onCompleted
     _currentTrackActive = false;
     _completionHandled = true;
     _currentSong = song;
     _activeSponsorSegments = [];
     _isSkippingSponsor = false;
+    _skippedSegmentKeys.clear();
 
     // Flush ExoPlayer pipeline before loading new track to avoid stale playback events
     try {
       await _player.stop();
     } catch (_) {}
 
-    // Query SponsorBlock skip segments deferred (after 3s) so initial audio gets 100% bandwidth
-    Future.delayed(const Duration(seconds: 3), () {
-      if (_currentSong?.id != song.id) return;
+    if (currentRequestId != _playRequestId) return;
+
+    // Query SponsorBlock skip segments concurrently
+    Future.microtask(() {
+      if (currentRequestId != _playRequestId) return;
       String? ytVideoId;
       if (song.id.startsWith('yt_')) {
         ytVideoId = song.id.substring(3);
@@ -289,7 +358,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
       if (ytVideoId != null && ytVideoId.isNotEmpty) {
         SponsorBlockService.instance.getSkipSegments(ytVideoId).then((segments) {
-          if (_currentSong?.id == song.id) {
+          if (currentRequestId == _playRequestId) {
             _activeSponsorSegments = segments;
             if (segments.isNotEmpty) {
               debugPrint('SponsorBlock: Loaded ${segments.length} skip segments for YouTube video $ytVideoId');
@@ -298,10 +367,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         }).catchError((_) {});
       }
     });
+
     mediaItem.add(
       MediaItem(
         id: song.id,
-        album: 'Ember',
+        album: 'PulsePipe',
         title: song.title,
         artist: song.artist,
         duration: song.duration,
@@ -330,14 +400,14 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       final isLocal = s.startsWith('/') || s.startsWith('file://') || RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(s);
 
       if (isLocal) {
-        var localPath = s.replaceFirst('file://', '');
-        if (Platform.isWindows && localPath.startsWith('/') && localPath.length > 2 && localPath[2] == ':') {
-          localPath = localPath.substring(1);
-        }
+        final localPath = _resolveFilePath(s);
         final file = File(localPath);
         if (await file.exists()) {
           await _player.setFilePath(localPath, initialPosition: Duration.zero, preload: true);
-          if (_currentSong?.id != song.id) return;
+          if (currentRequestId != _playRequestId) {
+            try { await _player.stop(); } catch (_) {}
+            return;
+          }
           await _player.play();
           return;
         } else {
@@ -347,12 +417,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
 
       // Online pure YouTube stream resolution via NewPipe extractor
-      final targetSong = song;
       LogService.instance.recordActiveTrack(song);
 
       // Resolve direct YouTube Opus / AAC streams
       final candidates = await StreamResolverService.resolvePlayableStreamCandidates(song);
-      if (_currentSong?.id != targetSong.id) return; // Superseded by newer track selection
+      if (currentRequestId != _playRequestId) return; // Superseded by newer track selection
       if (candidates.isEmpty && s.isNotEmpty && !s.contains('youtube.com/watch') && !s.contains('youtu.be/')) {
         candidates.add(s);
       }
@@ -360,12 +429,12 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
       bool started = false;
       for (int i = 0; i < candidates.length; i++) {
-        if (_currentSong?.id != targetSong.id) return; // Superseded by newer track selection
+        if (currentRequestId != _playRequestId) return; // Superseded by newer track selection
         final url = candidates[i];
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
 
-        // Attempt 1: Standard YouTube streaming headers (Origin, Referer, Firefox User-Agent)
+        // Attempt 1: Standard YouTube streaming headers
         try {
           LogService.stream('AudioHandler', 'Connecting to candidate #${i + 1} with YouTube streaming headers...');
           await _player.setUrl(
@@ -373,39 +442,47 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             headers: isYouTubeStream ? _youtubeHeaders : null,
             initialPosition: Duration.zero,
             preload: true,
-          ).timeout(const Duration(seconds: 5));
-          if (_currentSong?.id != targetSong.id) return;
+          ).timeout(const Duration(seconds: 4));
+          if (currentRequestId != _playRequestId) {
+            try { await _player.stop(); } catch (_) {}
+            return;
+          }
           await _player.play();
           started = true;
           LogService.instance.recordPlaybackSuccess(song);
           debugPrint('Successfully playing "${song.title}" via candidate #${i + 1}');
           break;
         } catch (e) {
+          try { await _player.stop(); } catch (_) {}
           LogService.w('AudioHandler', 'Candidate #${i + 1} with headers failed: $e. Retrying raw...');
         }
 
         // Attempt 2: Standard setUrl without headers (quick 3s fallback)
-        if (_currentSong?.id == targetSong.id) {
+        if (currentRequestId == _playRequestId) {
           try {
             await _player.setUrl(
               url,
               initialPosition: Duration.zero,
               preload: true,
             ).timeout(const Duration(seconds: 3));
-            if (_currentSong?.id != targetSong.id) return;
+            if (currentRequestId != _playRequestId) {
+              try { await _player.stop(); } catch (_) {}
+              return;
+            }
             await _player.play();
             started = true;
             LogService.instance.recordPlaybackSuccess(song);
             debugPrint('Successfully playing "${song.title}" via candidate #${i + 1} raw stream');
             break;
           } catch (e) {
+            try { await _player.stop(); } catch (_) {}
             LogService.w('AudioHandler', 'Candidate #${i + 1} raw stream failed: $e. Moving to next candidate...');
           }
         }
       }
 
       // Tier 2 Fallback: If all direct YouTube candidate streams fail, try Piped audio proxy
-      if (!started && _currentSong?.id == targetSong.id) {
+      if (!started && currentRequestId == _playRequestId) {
         final videoId = song.id.startsWith('yt_')
             ? song.id.replaceFirst('yt_', '')
             : YouTubeImporterService.extractVideoId(song.streamUrl);
@@ -413,20 +490,24 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           try {
             LogService.stream('AudioHandler', 'Direct streams failed, attempting Piped proxy fallback for $videoId...');
             final pipedUrl = await PipedService.getAudioStream(videoId);
-            if (pipedUrl != null && pipedUrl.isNotEmpty && _currentSong?.id == targetSong.id) {
+            if (pipedUrl != null && pipedUrl.isNotEmpty && currentRequestId == _playRequestId) {
               await _player.setUrl(
                 pipedUrl,
-                headers: _youtubeHeaders,
+                headers: _proxyHeaders,
                 initialPosition: Duration.zero,
                 preload: true,
-              ).timeout(const Duration(seconds: 10));
-              if (_currentSong?.id != targetSong.id) return;
+              ).timeout(const Duration(seconds: 8));
+              if (currentRequestId != _playRequestId) {
+                try { await _player.stop(); } catch (_) {}
+                return;
+              }
               await _player.play();
               started = true;
               LogService.instance.recordPlaybackSuccess(song);
               debugPrint('Successfully playing "${song.title}" via Piped proxy fallback');
             }
           } catch (e) {
+            try { await _player.stop(); } catch (_) {}
             LogService.w('AudioHandler', 'Piped proxy fallback error: $e');
             debugPrint('[AudioHandler] Piped proxy fallback error for "${song.title}": $e');
           }
@@ -434,13 +515,19 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
 
       if (!started) {
-        if (_currentSong?.id != targetSong.id) return; // Superseded by newer track selection
+        if (currentRequestId != _playRequestId) return; // Superseded by newer track selection
         debugPrint('All stream candidates failed for "${song.title}". Halting playback gracefully.');
         LogService.instance.recordPlaybackFailure(song, 'All stream candidates exhausted (failed to connect or decode audio)');
         StreamResolverService.invalidateCache(song.id);
         YouTubeImporterService.invalidateCache(song.id);
         playbackState.add(
           playbackState.value.copyWith(
+            controls: [
+              MediaControl.skipToPrevious,
+              MediaControl.play,
+              MediaControl.stop,
+              MediaControl.skipToNext,
+            ],
             processingState: AudioProcessingState.idle,
             playing: false,
           ),
@@ -449,13 +536,19 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         return;
       }
     } catch (e, st) {
-      if (_currentSong?.id != song.id) return; // Superseded by newer track selection
+      if (currentRequestId != _playRequestId) return; // Superseded by newer track selection
       debugPrint('Playback error: $e');
       LogService.instance.recordPlaybackFailure(song, e, st);
       StreamResolverService.invalidateCache(song.id);
       YouTubeImporterService.invalidateCache(song.id);
       playbackState.add(
         playbackState.value.copyWith(
+          controls: [
+            MediaControl.skipToPrevious,
+            MediaControl.play,
+            MediaControl.stop,
+            MediaControl.skipToNext,
+          ],
           processingState: AudioProcessingState.idle,
           playing: false,
         ),
@@ -618,7 +711,14 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   Future<void> pause() => _player.pause();
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    final targetSec = position.inMilliseconds / 1000.0;
+    _skippedSegmentKeys.removeWhere((key) {
+      final start = double.tryParse(key.split('_').first) ?? 0.0;
+      return start >= targetSec;
+    });
+    await _player.seek(position);
+  }
 
   @override
   Future<void> setSpeed(double speed) => _player.setSpeed(speed);
@@ -634,6 +734,12 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     mediaItem.add(null);
     playbackState.add(
       playbackState.value.copyWith(
+        controls: [
+          MediaControl.skipToPrevious,
+          MediaControl.play,
+          MediaControl.stop,
+          MediaControl.skipToNext,
+        ],
         processingState: AudioProcessingState.idle,
         playing: false,
       ),

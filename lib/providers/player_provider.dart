@@ -70,6 +70,20 @@ class PlayerProvider extends ChangeNotifier {
   StreamSubscription? _durSub;
   StreamSubscription? _stateSub;
 
+  bool _isDisposed = false;
+  bool _isScrubbing = false;
+  bool get isScrubbing => _isScrubbing;
+  void setScrubbing(bool scrubbing) {
+    _isScrubbing = scrubbing;
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
   PlayerProvider(this._audioHandler, this._storageService) {
     _init();
   }
@@ -143,6 +157,8 @@ class PlayerProvider extends ChangeNotifier {
     _playlists = _storageService.loadPlaylists();
     _downloads = _storageService.loadDownloads();
     _speed = _storageService.loadPlaybackSpeed();
+    _repeatMode = _storageService.loadRepeatMode();
+    _isShuffle = _storageService.loadShuffle();
     _eqPreset = _storageService.loadEqualizerPreset();
     _eqEnabled = _storageService.loadEqualizerEnabled();
     _bassBoost = _storageService.loadBassBoost();
@@ -171,6 +187,11 @@ class PlayerProvider extends ChangeNotifier {
     _audioHandler.setEqualizerEnabled(_eqEnabled);
     _audioHandler.setBassBoost(_bassBoost);
     _audioHandler.applyEqualizerPreset(_eqPreset);
+    if (_eqPreset == 'Custom' && _bandGains.isNotEmpty) {
+      for (final entry in _bandGains.entries) {
+        _audioHandler.setBandGain(entry.key, entry.value);
+      }
+    }
 
     // Ensure all restored lists are completely free of legacy mock/placeholder tracks
     _favorites = _favorites.where((s) => !Song.isPlaceholder(s)).toList();
@@ -196,6 +217,7 @@ class PlayerProvider extends ChangeNotifier {
     int lastNotifiedSec = -1;
     DateTime lastNotifyTime = DateTime.fromMillisecondsSinceEpoch(0);
     _posSub = _audioHandler.player.positionStream.listen((pos) {
+      if (_isScrubbing) return;
       _position = pos;
       final now = DateTime.now();
       if (pos.inSeconds != lastNotifiedSec || now.difference(lastNotifyTime).inMilliseconds >= 300) {
@@ -360,6 +382,7 @@ class PlayerProvider extends ChangeNotifier {
     }
 
     _recordHistory(song);
+    _position = Duration.zero;
     _duration = song.duration;
     _isPlaying = true;
     _isLoadingStream = true;
@@ -506,6 +529,10 @@ class PlayerProvider extends ChangeNotifier {
       _currentIndex--;
       notifyListeners();
       await playSong(_queue[_currentIndex]);
+    } else if (_repeatMode == 'all' && _queue.isNotEmpty) {
+      _currentIndex = _queue.length - 1;
+      notifyListeners();
+      await playSong(_queue[_currentIndex]);
     } else {
       await seek(Duration.zero);
     }
@@ -524,7 +551,7 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void cycleRepeatMode() {
+  Future<void> cycleRepeatMode() async {
     if (_repeatMode == 'off') {
       _repeatMode = 'all';
     } else if (_repeatMode == 'all') {
@@ -532,19 +559,24 @@ class PlayerProvider extends ChangeNotifier {
     } else {
       _repeatMode = 'off';
     }
+    await _storageService.saveRepeatMode(_repeatMode);
     notifyListeners();
   }
 
-  void toggleShuffle() {
+  Future<void> toggleShuffle() async {
     _isShuffle = !_isShuffle;
+    await _storageService.saveShuffle(_isShuffle);
     if (_isShuffle && _queue.length > 1) {
       _unshuffledQueue = List.from(_queue);
       final cur = currentSong;
-      _queue.shuffle();
-      if (cur != null) {
-        _queue.remove(cur);
-        _queue.insert(0, cur);
-        _currentIndex = 0;
+      if (cur != null && _currentIndex >= 0 && _currentIndex < _queue.length) {
+        // Keep played history intact, shuffle only upcoming songs
+        final played = _queue.sublist(0, _currentIndex + 1);
+        final upcoming = _queue.sublist(_currentIndex + 1);
+        upcoming.shuffle();
+        _queue = [...played, ...upcoming];
+      } else {
+        _queue.shuffle();
       }
     } else if (!_isShuffle && _unshuffledQueue.isNotEmpty) {
       final cur = currentSong;
@@ -739,12 +771,15 @@ class PlayerProvider extends ChangeNotifier {
       newIndex -= 1;
     }
     if (newIndex < 0 || newIndex >= _queue.length) return;
-    final cur = currentSong;
     final item = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, item);
 
-    if (cur != null) {
-      _currentIndex = _queue.indexOf(cur);
+    if (oldIndex == _currentIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex++;
     }
     notifyListeners();
   }
@@ -753,6 +788,8 @@ class PlayerProvider extends ChangeNotifier {
     final cur = currentSong;
     _queue.clear();
     _unshuffledQueue.clear();
+    _isShuffle = false;
+    _storageService.saveShuffle(false);
     if (cur != null) {
       _queue.add(cur);
       _unshuffledQueue.add(cur);
@@ -769,12 +806,40 @@ class PlayerProvider extends ChangeNotifier {
       id: 'pl_${DateTime.now().millisecondsSinceEpoch}',
       title: title.trim().isNotEmpty ? title.trim() : 'New Playlist',
       description: description,
-      songs: [],
+      songs: const [],
       createdAt: DateTime.now(),
     );
     await _storageService.savePlaylist(newPlaylist);
     _playlists = _storageService.loadPlaylists();
     notifyListeners();
+  }
+
+  Future<void> renamePlaylist(String playlistId, String newTitle) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx != -1) {
+      final p = _playlists[idx];
+      final updated = p.copyWith(title: newTitle.trim().isNotEmpty ? newTitle.trim() : p.title);
+      await _storageService.savePlaylist(updated);
+      _playlists = _storageService.loadPlaylists();
+      notifyListeners();
+    }
+  }
+
+  Future<void> reorderPlaylistSongs(String playlistId, int oldIndex, int newIndex) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx != -1) {
+      final p = _playlists[idx];
+      final songs = List<Song>.from(p.songs);
+      if (oldIndex < 0 || oldIndex >= songs.length) return;
+      if (oldIndex < newIndex) newIndex -= 1;
+      if (newIndex < 0 || newIndex >= songs.length) return;
+      final moved = songs.removeAt(oldIndex);
+      songs.insert(newIndex, moved);
+      final updated = p.copyWith(songs: songs);
+      await _storageService.savePlaylist(updated);
+      _playlists = _storageService.loadPlaylists();
+      notifyListeners();
+    }
   }
 
   Future<void> addSongToPlaylist(String playlistId, Song song) async {
@@ -793,6 +858,21 @@ class PlayerProvider extends ChangeNotifier {
       await _storageService.savePlaylist(updated);
       _playlists = _storageService.loadPlaylists();
       notifyListeners();
+    }
+  }
+
+  Future<void> removeSongFromPlaylistAt(String playlistId, int index) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx != -1) {
+      final p = _playlists[idx];
+      final songs = List<Song>.from(p.songs);
+      if (index >= 0 && index < songs.length) {
+        songs.removeAt(index);
+        final updated = p.copyWith(songs: songs);
+        await _storageService.savePlaylist(updated);
+        _playlists = _storageService.loadPlaylists();
+        notifyListeners();
+      }
     }
   }
 
@@ -849,6 +929,11 @@ class PlayerProvider extends ChangeNotifier {
     final idx = _downloads.indexWhere((s) => s.id == songId);
     if (idx != -1) {
       final songToRemove = _downloads[idx];
+      if (currentSong?.id == songId) {
+        try {
+          await _audioHandler.stop();
+        } catch (_) {}
+      }
       if (songToRemove.streamUrl.isNotEmpty) {
         try {
           var filePath = songToRemove.streamUrl.replaceFirst('file://', '');
@@ -907,12 +992,16 @@ class PlayerProvider extends ChangeNotifier {
     _bassBoost = gain;
     await _storageService.saveBassBoost(gain);
     await _audioHandler.setBassBoost(gain);
-    notifyListeners();
+    notifyListenersPlatform();
   }
+
+  void notifyListenersPlatform() => notifyListeners();
 
   Future<void> setBandGain(int index, double gain) async {
     _bandGains[index] = gain;
+    _eqPreset = 'Custom';
     await _storageService.saveBandGains(_bandGains);
+    await _storageService.saveEqualizerPreset('Custom');
     await _audioHandler.setBandGain(index, gain);
     notifyListeners();
   }
@@ -1024,6 +1113,10 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   void startSleepTimer(int minutes) {
+    if (minutes <= 0) {
+      cancelSleepTimer();
+      return;
+    }
     _sleepTimer?.cancel();
     _sleepSecondsRemaining = minutes * 60;
     notifyListeners();
@@ -1048,6 +1141,8 @@ class PlayerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
+    _audioHandler.setNavigationCallbacks();
     playbackErrorNotifier.dispose();
     _posSub?.cancel();
     _durSub?.cancel();

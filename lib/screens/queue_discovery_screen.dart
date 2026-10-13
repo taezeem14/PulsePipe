@@ -520,10 +520,10 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
               final isCurrent = player.currentSong?.id == song.id;
 
               return ReorderableDelayedDragStartListener(
-                key: ValueKey('queue_${song.id}_${song.hashCode}'),
+                key: ValueKey('queue_${song.id}_$index'),
                 index: index,
                 child: Dismissible(
-                  key: ValueKey('dismiss_${song.id}_${song.hashCode}'),
+                  key: ValueKey('dismiss_${song.id}_$index'),
                   direction: DismissDirection.endToStart,
                   background: Container(
                     alignment: Alignment.centerRight,

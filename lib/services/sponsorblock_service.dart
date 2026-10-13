@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class SponsorSegment {
@@ -6,7 +7,7 @@ class SponsorSegment {
   final double end;
   final String category;
 
-  SponsorSegment({
+  const SponsorSegment({
     required this.start,
     required this.end,
     required this.category,
@@ -19,38 +20,101 @@ class SponsorBlockService {
 
   bool isEnabled = true;
 
-  // Cache segment results by stream ID
-  final Map<String, List<SponsorSegment>> _segmentCache = {};
+  // LRU cache with timestamp for TTL expiration
+  static const int _maxCacheEntries = 100;
+  static const Duration _cacheTtl = Duration(hours: 1);
+  final Map<String, (DateTime, List<SponsorSegment>)> _cache = {};
+
+  void clearCache() => _cache.clear();
+
+  void invalidate(String videoId) => _cache.remove(videoId);
+
+  static List<SponsorSegment> mergeSegments(List<SponsorSegment> raw) {
+    if (raw.isEmpty) return [];
+    final valid = raw.where((s) => s.end > s.start).toList();
+    valid.sort((a, b) => a.start.compareTo(b.start));
+
+    final merged = <SponsorSegment>[];
+    SponsorSegment current = valid.first;
+
+    for (int i = 1; i < valid.length; i++) {
+      final next = valid[i];
+      if (next.start <= current.end + 0.5) {
+        current = SponsorSegment(
+          start: current.start,
+          end: next.end > current.end ? next.end : current.end,
+          category: current.category,
+        );
+      } else {
+        merged.add(current);
+        current = next;
+      }
+    }
+    merged.add(current);
+    return merged;
+  }
+
+  void _cacheSegments(String videoId, List<SponsorSegment> segments) {
+    if (_cache.length >= _maxCacheEntries) {
+      _cache.remove(_cache.keys.first);
+    }
+    _cache[videoId] = (DateTime.now(), segments);
+  }
 
   Future<List<SponsorSegment>> getSkipSegments(String videoId) async {
     if (!isEnabled || videoId.isEmpty) return [];
 
-    if (_segmentCache.containsKey(videoId)) {
-      return _segmentCache[videoId]!;
+    final cached = _cache[videoId];
+    if (cached != null) {
+      if (DateTime.now().difference(cached.$1) < _cacheTtl) {
+        return cached.$2;
+      }
+      _cache.remove(videoId);
     }
 
     try {
-      final uri = Uri.parse(
-        'https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=["sponsor","intro","outro","selfpromo"]',
-      );
-      final response = await http.get(uri).timeout(const Duration(seconds: 4));
+      final uri = Uri.https('sponsor.ajay.app', '/api/skipSegments', {
+        'videoID': videoId,
+        'categories': jsonEncode(['sponsor', 'intro', 'outro', 'selfpromo']),
+      });
+
+      final response = await http
+          .get(uri, headers: {'User-Agent': 'PulsePipe/1.0'})
+          .timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
-        final segments = data.map((item) {
-          final segment = (item['segment'] as List<dynamic>?) ?? [0, 0];
-          return SponsorSegment(
-            start: (segment[0] as num).toDouble(),
-            end: (segment[1] as num).toDouble(),
-            category: item['category'] as String? ?? 'sponsor',
-          );
-        }).toList();
+        final decoded = jsonDecode(response.body);
+        if (decoded is List) {
+          final rawList = <SponsorSegment>[];
+          for (final item in decoded) {
+            if (item is! Map) continue;
+            final segArr = item['segment'];
+            if (segArr is! List || segArr.length < 2) continue;
 
-        _segmentCache[videoId] = segments;
-        return segments;
+            final start = num.tryParse(segArr[0].toString())?.toDouble() ?? 0.0;
+            final end = num.tryParse(segArr[1].toString())?.toDouble() ?? 0.0;
+            if (end <= start) continue;
+
+            rawList.add(SponsorSegment(
+              start: start,
+              end: end,
+              category: item['category']?.toString() ?? 'sponsor',
+            ));
+          }
+
+          final normalized = mergeSegments(rawList);
+          _cacheSegments(videoId, normalized);
+          return normalized;
+        }
+      } else if (response.statusCode == 404) {
+        // Video has no sponsor segments: memoize negative hit
+        _cacheSegments(videoId, []);
+        return [];
+      } else if (response.statusCode == 429) {
+        debugPrint('[SponsorBlock] Rate limited (429)');
       }
-    } catch (_) {
-      // Offline fallback: graceful return empty segments
+    } catch (e) {
+      debugPrint('[SponsorBlock] Network error for $videoId: $e');
     }
 
     return [];

@@ -19,6 +19,8 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
   bool _userScrolling = false;
   Timer? _userScrollTimer;
 
+  String? _currentSongId;
+
   @override
   void dispose() {
     _userScrollTimer?.cancel();
@@ -51,6 +53,12 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     final cur = player.currentSong;
+
+    if (cur != null && cur.id != _currentSongId) {
+      _currentSongId = cur.id;
+      _lastIndex = -1;
+      _userScrolling = false;
+    }
 
     if (cur == null) {
       return const Center(
@@ -100,7 +108,9 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
       if (activeIdx != _lastIndex && activeIdx >= 0) {
         _lastIndex = activeIdx;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToIndex(activeIdx, synced.length);
+          if (mounted) {
+            _scrollToIndex(activeIdx, synced.length);
+          }
         });
       }
 

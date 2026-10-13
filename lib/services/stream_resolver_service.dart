@@ -5,12 +5,13 @@ import 'log_service.dart';
 class StreamResolverService {
   static const int _maxCacheEntries = 100;
   static final Map<String, ({List<String> streams, DateTime cachedAt})> _resolvedCache = {};
+  static final Map<String, Future<List<String>>> _inFlightResolutions = {};
 
   static void _cacheStreams(String key, List<String> streams) {
     if (_resolvedCache.length >= _maxCacheEntries) {
       _resolvedCache.remove(_resolvedCache.keys.first);
     }
-    _resolvedCache[key] = (streams: streams, cachedAt: DateTime.now());
+    _resolvedCache[key] = (streams: List<String>.from(streams), cachedAt: DateTime.now());
   }
 
   /// Invalidate cached stream candidates for a song if playback fails
@@ -21,6 +22,7 @@ class StreamResolverService {
   /// Clears all stream caches across the application
   static void clearAllCaches() {
     _resolvedCache.clear();
+    _inFlightResolutions.clear();
   }
 
   static final Set<String> _currentlyPreloading = {};
@@ -89,18 +91,33 @@ class StreamResolverService {
   /// 2. Direct YouTube video audio extraction via YoutubeExplode (requireWatchPage: false)
   /// 3. Piped REST audio proxy failover
   /// 4. Dynamic YouTube search & stream extraction if only title/artist is known
-  static Future<List<String>> resolvePlayableStreamCandidates(Song song) async {
+  static Future<List<String>> resolvePlayableStreamCandidates(Song song) {
     final cacheKey = song.id.isNotEmpty ? song.id : song.streamUrl;
     final cached = _resolvedCache[cacheKey];
     if (cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inHours < 4) {
       LogService.stream('StreamResolver', 'Cache HIT for "${song.title}": ${cached.streams.length} candidate(s)');
-      return List.from(cached.streams);
+      return Future.value(List<String>.from(cached.streams));
     }
 
+    if (_inFlightResolutions.containsKey(cacheKey)) {
+      return _inFlightResolutions[cacheKey]!;
+    }
+
+    final future = _resolveCandidatesInternal(song, cacheKey);
+    _inFlightResolutions[cacheKey] = future;
+    return future.whenComplete(() {
+      _inFlightResolutions.remove(cacheKey);
+    });
+  }
+
+  static Future<List<String>> _resolveCandidatesInternal(Song song, String cacheKey) async {
     final s = song.streamUrl;
 
-    // 1. Local offline files
-    if (s.isNotEmpty && (s.startsWith('/') || s.startsWith('file://'))) {
+    // 1. Local offline files (POSIX, file://, and Windows drive letters)
+    final isLocal = s.startsWith('/') ||
+        s.startsWith('file://') ||
+        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(s);
+    if (s.isNotEmpty && isLocal) {
       LogService.stream('StreamResolver', 'Local offline file identified for "${song.title}": $s');
       return [s];
     }
@@ -123,7 +140,7 @@ class StreamResolverService {
           LogService.stream('StreamResolver', 'Resolved ${streams.length} direct YouTube audio streams for "${song.title}"');
           debugPrint('[NewPipe Engine] Resolved ${streams.length} direct YouTube audio streams for "${song.title}"');
           _cacheStreams(cacheKey, streams);
-          return streams;
+          return List<String>.from(streams);
         }
       } catch (e) {
         LogService.w('StreamResolver', 'Direct extraction error for $videoId: $e');
@@ -149,7 +166,7 @@ class StreamResolverService {
             LogService.stream('StreamResolver', 'Dynamic search resolved ${streams.length} streams for "$query"');
             debugPrint('[NewPipe Engine] Dynamic search resolved ${streams.length} streams for "$query"');
             _cacheStreams(cacheKey, streams);
-            return streams;
+            return List<String>.from(streams);
           }
         }
       }

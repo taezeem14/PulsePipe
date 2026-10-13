@@ -27,6 +27,15 @@ class MiniPlayer extends StatelessWidget {
       onLongPress: () {
         player.stopPlayback();
       },
+      onHorizontalDragEnd: (details) {
+        if (details.primaryVelocity != null) {
+          if (details.primaryVelocity! < -200) {
+            player.skipNext();
+          } else if (details.primaryVelocity! > 200) {
+            player.skipPrevious();
+          }
+        }
+      },
       onTap: () {
         Navigator.of(context).push(
           PageRouteBuilder(

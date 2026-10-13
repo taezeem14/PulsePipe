@@ -285,7 +285,7 @@
               <line stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" x1="420" x2="420" y1="0" y2="240"></line>
               <line stroke="rgba(255,255,255,0.06)" stroke-dasharray="2 2" x1="540" x2="540" y1="0" y2="240"></line>
               <path d="M 0,140 Q 60,135 120,80 T 260,110 T 380,60 T 480,120 T 600,125" fill="none" stroke="#FFFFFF" stroke-width="1.75" id="eqSplinePath"></path>
-              <path d="M 0,140 Q 60,135 120,80 T 260,110 T 380,60 T 480,120 T 600,125 L 600,240 L 0,240 Z" fill="rgba(255,255,255,0.03)"></path>
+              <path d="M 0,140 Q 60,135 120,80 T 260,110 T 380,60 T 480,120 T 600,125 L 600,240 L 0,240 Z" fill="rgba(255,255,255,0.03)" id="eqSplineArea"></path>
               <rect class="cursor-pointer hover:fill-white" fill="#0E0E0E" height="6" stroke="#FFFFFF" stroke-width="1.5" width="6" x="57" y="132"></rect>
               <rect class="cursor-pointer" fill="#FFFFFF" height="6" stroke="#FFFFFF" stroke-width="1.5" width="6" x="117" y="77"></rect>
               <rect class="cursor-pointer hover:fill-white" fill="#0E0E0E" height="6" stroke="#FFFFFF" stroke-width="1.5" width="6" x="257" y="107"></rect>
@@ -750,20 +750,23 @@
 
     let isScrubbing = false;
     if (scrubContainer) {
+      scrubContainer.style.touchAction = 'none';
       scrubContainer.addEventListener('pointerdown', (e) => {
         isScrubbing = true;
-        scrubContainer.setPointerCapture(e.pointerId);
+        try { scrubContainer.setPointerCapture(e.pointerId); } catch (_) {}
         updateScrub(e);
       });
       scrubContainer.addEventListener('pointermove', (e) => {
         if (isScrubbing) updateScrub(e);
       });
-      scrubContainer.addEventListener('pointerup', (e) => {
+      function endScrub(e) {
         if (isScrubbing) {
           isScrubbing = false;
           try { scrubContainer.releasePointerCapture(e.pointerId); } catch (_) {}
         }
-      });
+      }
+      scrubContainer.addEventListener('pointerup', endScrub);
+      scrubContainer.addEventListener('pointercancel', endScrub);
     }
 
     // 5. Automated needle progression
@@ -783,6 +786,7 @@
     let eqIsFlat = false;
     const resetEqBtn = document.getElementById('resetEqBtn');
     const splinePath = document.getElementById('eqSplinePath');
+    const splineArea = document.getElementById('eqSplineArea');
     const eqSubBassVal = document.getElementById('eqSubBassVal');
     const eqWarmTapeVal = document.getElementById('eqWarmTapeVal');
     const eqVocalAirVal = document.getElementById('eqVocalAirVal');
@@ -793,6 +797,7 @@
         eqIsFlat = !eqIsFlat;
         if (eqIsFlat) {
           splinePath.setAttribute('d', 'M 0,120 Q 60,120 120,120 T 260,120 T 380,120 T 480,120 T 600,120');
+          if (splineArea) splineArea.setAttribute('d', 'M 0,120 Q 60,120 120,120 T 260,120 T 380,120 T 480,120 T 600,120 L 600,240 L 0,240 Z');
           resetEqBtn.textContent = 'RESTORE';
           if (eqSubBassVal) eqSubBassVal.textContent = '0.0 dB';
           if (eqWarmTapeVal) eqWarmTapeVal.textContent = '1.00 Q';
@@ -800,6 +805,7 @@
           if (eqDspModeVal) eqDspModeVal.textContent = 'FLAT 0dB';
         } else {
           splinePath.setAttribute('d', 'M 0,140 Q 60,135 120,80 T 260,110 T 380,60 T 480,120 T 600,125');
+          if (splineArea) splineArea.setAttribute('d', 'M 0,140 Q 60,135 120,80 T 260,110 T 380,60 T 480,120 T 600,125 L 600,240 L 0,240 Z');
           resetEqBtn.textContent = 'RESET';
           if (eqSubBassVal) eqSubBassVal.textContent = '+3.8 dB';
           if (eqWarmTapeVal) eqWarmTapeVal.textContent = '1.42 Q';
@@ -820,23 +826,44 @@
       });
     }
 
-    // 8. Copy Terminal Command
+    // 8. Copy Terminal Command with Fallback
     const copyBtn = document.getElementById('copyAdbTerminalBtn');
     if (copyBtn) {
       copyBtn.addEventListener('click', () => {
+        const cmd = 'adb install -r PulsePipe-v1.0.0.apk';
+        const showSuccess = () => {
+          copyBtn.textContent = 'COPIED ✓';
+          copyBtn.style.backgroundColor = '#ffffff';
+          copyBtn.style.color = '#000000';
+          setTimeout(() => {
+            copyBtn.textContent = 'COPY COMMAND';
+            copyBtn.style.backgroundColor = '';
+            copyBtn.style.color = '';
+          }, 2000);
+        };
+
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText('adb install -r PulsePipe-v1.0.0.apk').then(() => {
-            copyBtn.textContent = 'COPIED ✓';
-            copyBtn.style.backgroundColor = '#ffffff';
-            copyBtn.style.color = '#000000';
-            setTimeout(() => {
-              copyBtn.textContent = 'COPY COMMAND';
-              copyBtn.style.backgroundColor = '';
-              copyBtn.style.color = '';
-            }, 2000);
-          }).catch(() => {
-            copyBtn.textContent = 'COPIED ✓';
+          navigator.clipboard.writeText(cmd).then(showSuccess).catch(() => {
+            fallbackCopy(cmd);
           });
+        } else {
+          fallbackCopy(cmd);
+        }
+
+        function fallbackCopy(text) {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showSuccess();
+          } catch (_) {
+            copyBtn.textContent = 'COPIED ✓';
+          }
         }
       });
     }

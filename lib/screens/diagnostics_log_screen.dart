@@ -30,10 +30,27 @@ class _DiagnosticsLogScreenState extends State<DiagnosticsLogScreen> with Single
     // Pre-populate tester with active track ID or Rick Astley test ID
     final activeId = LogService.instance.activeSongId;
     _testQueryController.text = activeId.isNotEmpty ? activeId : 'dQw4w9WgXcQ';
+
+    LogService.instance.addListener(_handleLogsChanged);
+  }
+
+  void _handleLogsChanged() {
+    if (_autoScroll && _logScrollController.hasClients && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_logScrollController.hasClients && mounted) {
+          _logScrollController.animateTo(
+            _logScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    LogService.instance.removeListener(_handleLogsChanged);
     _tabController.dispose();
     _testQueryController.dispose();
     _logScrollController.dispose();
@@ -41,25 +58,35 @@ class _DiagnosticsLogScreenState extends State<DiagnosticsLogScreen> with Single
   }
 
   void _copyReport() async {
-    await LogService.instance.copyReportToClipboard();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        backgroundColor: EmberColors.surfaceContainerHigh,
-        behavior: SnackBarBehavior.floating,
-        content: Row(
-          children: [
-            FaIcon(FontAwesomeIcons.circleCheck, color: EmberColors.primaryAmber, size: 16),
-            SizedBox(width: 10),
-            Text(
-              'Diagnostic report copied to clipboard!',
-              style: TextStyle(color: EmberColors.textPrimary, fontWeight: FontWeight.w600),
-            ),
-          ],
+    try {
+      await LogService.instance.copyReportToClipboard();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: EmberColors.surfaceContainerHigh,
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              FaIcon(FontAwesomeIcons.circleCheck, color: EmberColors.primaryAmber, size: 16),
+              SizedBox(width: 10),
+              Text(
+                'Diagnostic report copied to clipboard!',
+                style: TextStyle(color: EmberColors.textPrimary, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          duration: Duration(seconds: 2),
         ),
-        duration: Duration(seconds: 2),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: EmberColors.error,
+          content: Text('Failed to copy: $e'),
+        ),
+      );
+    }
   }
 
   void _runStreamTest() async {
@@ -71,13 +98,21 @@ class _DiagnosticsLogScreenState extends State<DiagnosticsLogScreen> with Single
       _testResult = null;
     });
 
-    final res = await LogService.instance.runExtractionTest(query);
+    try {
+      final res = await LogService.instance.runExtractionTest(query);
 
-    if (mounted) {
-      setState(() {
-        _isTestingStream = false;
-        _testResult = res;
-      });
+      if (mounted) {
+        setState(() {
+          _isTestingStream = false;
+          _testResult = res;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isTestingStream = false;
+        });
+      }
     }
   }
 

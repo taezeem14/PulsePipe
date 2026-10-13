@@ -38,6 +38,7 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final player = context.read<PlayerProvider>();
       player.loadYouTubeTrending();
     });

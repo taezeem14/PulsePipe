@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'song.dart';
 
+@immutable
 class Playlist {
   final String id;
   final String title;
@@ -55,8 +57,26 @@ class Playlist {
           .whereType<Map>()
           .map((item) => Song.fromMap(Map<String, dynamic>.from(item)))
           .toList(),
-      createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
       coverUrl: map['coverUrl']?.toString(),
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Playlist &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          description == other.description &&
+          coverUrl == other.coverUrl &&
+          listEquals(songs, other.songs);
+
+  @override
+  int get hashCode => Object.hash(id, title, description, coverUrl);
+
+  @override
+  String toString() => 'Playlist(id: $id, title: $title, ${songs.length} tracks)';
 }

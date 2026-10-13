@@ -20,6 +20,8 @@ class NowPlayingScreen extends StatefulWidget {
 
 class _NowPlayingScreenState extends State<NowPlayingScreen> {
   bool _showLyrics = false;
+  bool _isDraggingScrubber = false;
+  double _dragScrubberValue = 0.0;
 
   String _formatDuration(Duration d) {
     final minutes = d.inMinutes;
@@ -70,7 +72,6 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
 
     final elapsed = player.position;
     final total = player.duration;
-    final remaining = total > elapsed ? total - elapsed : Duration.zero;
 
     return Scaffold(
       backgroundColor: EmberColors.obsidianBase,
@@ -265,11 +266,29 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                       overlayColor: EmberColors.primaryAmber.withValues(alpha: 0.2),
                     ),
                     child: Slider(
-                      value: total.inMilliseconds > 0
-                          ? elapsed.inMilliseconds.clamp(0, total.inMilliseconds).toDouble()
-                          : 0.0,
+                      value: _isDraggingScrubber
+                          ? _dragScrubberValue.clamp(0.0, total.inMilliseconds > 0 ? total.inMilliseconds.toDouble() : 1.0)
+                          : (total.inMilliseconds > 0
+                              ? elapsed.inMilliseconds.clamp(0, total.inMilliseconds).toDouble()
+                              : 0.0),
                       max: total.inMilliseconds > 0 ? total.inMilliseconds.toDouble() : 1.0,
+                      onChangeStart: (val) {
+                        setState(() {
+                          _isDraggingScrubber = true;
+                          _dragScrubberValue = val;
+                        });
+                        player.setScrubbing(true);
+                      },
                       onChanged: (val) {
+                        setState(() {
+                          _dragScrubberValue = val;
+                        });
+                      },
+                      onChangeEnd: (val) {
+                        setState(() {
+                          _isDraggingScrubber = false;
+                        });
+                        player.setScrubbing(false);
                         player.seek(Duration(milliseconds: val.toInt()));
                       },
                     ),
@@ -280,14 +299,14 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          _formatDuration(elapsed),
+                          _formatDuration(_isDraggingScrubber ? Duration(milliseconds: _dragScrubberValue.toInt()) : elapsed),
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                 color: EmberColors.textMuted,
                                 fontWeight: FontWeight.w600,
                               ),
                         ),
                         Text(
-                          '-${_formatDuration(remaining)}',
+                          '-${_formatDuration(total > (_isDraggingScrubber ? Duration(milliseconds: _dragScrubberValue.toInt()) : elapsed) ? total - (_isDraggingScrubber ? Duration(milliseconds: _dragScrubberValue.toInt()) : elapsed) : Duration.zero)}',
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                 color: EmberColors.textMuted,
                                 fontWeight: FontWeight.w600,

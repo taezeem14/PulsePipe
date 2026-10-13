@@ -143,7 +143,9 @@ class CatalogService {
 
   static Future<List<Song>> fetchRecommendations(Song song, {int limit = 12}) async {
     final cleanTitle = song.title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '').trim();
-    final query = '${cleanTitle.isNotEmpty ? cleanTitle : song.title} ${song.artist} songs'.trim();
+    final effectiveTitle = cleanTitle.isNotEmpty ? cleanTitle : song.title;
+    final hasArtist = song.artist.isNotEmpty && song.artist != 'Unknown Artist';
+    final query = hasArtist ? '$effectiveTitle ${song.artist} songs'.trim() : '$effectiveTitle songs'.trim();
     return searchOnline(query, limit: limit);
   }
 

@@ -40,7 +40,7 @@ class _AmbientGlowState extends State<AmbientGlow>
     if (widget.isPlaying && !_controller.isAnimating) {
       _controller.repeat(reverse: true);
     } else if (!widget.isPlaying && _controller.isAnimating) {
-      _controller.stop();
+      _controller.animateTo(0.0, duration: const Duration(milliseconds: 600), curve: Curves.easeOut);
     }
   }
 

@@ -34,78 +34,92 @@ class LyricsResult {
 }
 
 class LyricsService {
+  LyricsService._();
+
   static final Map<String, LyricsResult> _cache = {};
+  static const int _maxCacheSize = 60;
+
+  static void invalidateCache(String title, String artist) {
+    final cleanTitle = cleanString(title);
+    final cleanArtist = cleanString(artist);
+    final cacheKey = '${cleanTitle.toLowerCase()}___${cleanArtist.toLowerCase()}';
+    _cache.remove(cacheKey);
+  }
+
+  static void clearCache() {
+    _cache.clear();
+  }
 
   static String cleanString(String input) {
     final cleaned = input
-        .replaceAll(RegExp(r'\s*[\(\[](feat\.|ft\.|official|video|audio|remastered|lyric video|from|version|bonus|deluxe)[^\)\]]*[\)\]]', caseSensitive: false), '')
-        .replaceAll(RegExp(r'\s*-\s*(feat\.|ft\.|official|video|audio|remastered|lyric video|remaster).*$', caseSensitive: false), '')
+        .replaceAll(
+          RegExp(
+            r'\s*[\(\[](feat\.|ft\.|official|video|audio|remastered|lyric video|from|version|bonus|deluxe)[^\)\]]*[\)\]]',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'\s*-\s*(feat\.|ft\.|official|video|audio|remastered|lyric video|remaster).*$',
+            caseSensitive: false,
+          ),
+          '',
+        )
         .trim();
     return cleaned.isNotEmpty ? cleaned : input.trim();
   }
 
+  /// Parses LRC text supporting multi-tag lines, global offsets, fractional seconds, and hours
   static List<LyricLine> parseLrc(String lrcText) {
     final lines = <LyricLine>[];
     Duration globalOffset = Duration.zero;
 
-    final tagRegex = RegExp(r'\[([a-zA-Z]+|\d+):([^\]]+)\]');
-    final timeRegex = RegExp(r'^(\d{1,3}):(\d{2})(?:[\.:](\d{1,3}))?$');
+    // 1. Pre-scan for global offset tag across the entire document
+    final offsetRegex = RegExp(r'\[offset:\s*([+-]?\d+)\s*\]', caseSensitive: false);
+    final offsetMatch = offsetRegex.firstMatch(lrcText);
+    if (offsetMatch != null) {
+      final offsetMs = int.tryParse(offsetMatch.group(1) ?? '0') ?? 0;
+      globalOffset = Duration(milliseconds: offsetMs);
+    }
+
+    // Matches timestamp prefix: [mm:ss], [mm:ss.xx], [mm:ss.xxx], [hh:mm:ss.xx]
+    final prefixTimeTagRegex = RegExp(r'^(?:\[\s*(?:\d{1,3}:)?\d{1,3}:\d{2}(?:[:\.]\d{1,4})?\s*\])+');
+    final individualTagRegex = RegExp(r'\[\s*(?:(\d{1,3}):)?(\d{1,3}):(\d{2})(?:[:\.](\d{1,4}))?\s*\]');
 
     for (final rawLine in lrcText.split('\n')) {
       final trimmed = rawLine.trim();
       if (trimmed.isEmpty) continue;
 
-      final tagMatches = tagRegex.allMatches(trimmed).toList();
-      if (tagMatches.isEmpty) continue;
+      // Check if line starts with timestamp tags
+      final prefixMatch = prefixTimeTagRegex.firstMatch(trimmed);
+      if (prefixMatch == null) continue; // Skip metadata tags like [ar:...], [ti:...]
 
-      final lastTag = tagMatches.last;
-      final lineText = trimmed.substring(lastTag.end).trim();
-      final lineTimestamps = <Duration>[];
+      final prefixString = prefixMatch.group(0)!;
+      // The rest of the line is the full lyric text (including any subsequent brackets)
+      final lineText = trimmed.substring(prefixMatch.end).trim();
 
-      for (final match in tagMatches) {
-        final key = match.group(1)!;
-        final value = match.group(2)!;
+      final timeMatches = individualTagRegex.allMatches(prefixString);
+      for (final match in timeMatches) {
+        final hours = match.group(1) != null ? (int.tryParse(match.group(1)!) ?? 0) : 0;
+        final mins = int.tryParse(match.group(2) ?? '0') ?? 0;
+        final secs = int.tryParse(match.group(3) ?? '0') ?? 0;
+        final frac = match.group(4) ?? '0';
 
-        if (key.toLowerCase() == 'offset') {
-          final offsetMs = int.tryParse(value) ?? 0;
-          globalOffset = Duration(milliseconds: offsetMs);
-          continue;
+        int millis = 0;
+        if (frac.length == 1) {
+          millis = (int.tryParse(frac) ?? 0) * 100;
+        } else if (frac.length == 2) {
+          millis = (int.tryParse(frac) ?? 0) * 10;
+        } else if (frac.length >= 3) {
+          millis = int.tryParse(frac.substring(0, 3)) ?? 0;
         }
 
-        if (int.tryParse(key) == null) {
-          // Metadata tag like [ar:Artist], skip
-          continue;
-        }
-
-        final timeMatch = timeRegex.firstMatch('$key:$value');
-        if (timeMatch != null) {
-          final mins = int.tryParse(timeMatch.group(1) ?? '0') ?? 0;
-          final secs = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
-          final frac = timeMatch.group(3) ?? '0';
-
-          int millis = 0;
-          if (frac.length == 1) {
-            millis = (int.tryParse(frac) ?? 0) * 100;
-          } else if (frac.length == 2) {
-            millis = (int.tryParse(frac) ?? 0) * 10;
-          } else if (frac.length >= 3) {
-            millis = int.tryParse(frac.substring(0, 3)) ?? 0;
-          } else {
-            millis = 0;
-          }
-
-          lineTimestamps.add(Duration(minutes: mins, seconds: secs, milliseconds: millis));
-        }
-      }
-
-      for (final ts in lineTimestamps) {
-        final adjustedTs = ts + globalOffset;
-        lines.add(
-          LyricLine(
-            timestamp: adjustedTs.isNegative ? Duration.zero : adjustedTs,
-            text: lineText.isEmpty ? '...' : lineText,
-          ),
-        );
+        final ts = Duration(hours: hours, minutes: mins, seconds: secs, milliseconds: millis) + globalOffset;
+        lines.add(LyricLine(
+          timestamp: ts.isNegative ? Duration.zero : ts,
+          text: lineText,
+        ));
       }
     }
 
@@ -113,7 +127,6 @@ class LyricsService {
     return lines;
   }
 
-  static const int _maxCacheSize = 60;
   static void _cacheLyrics(String key, LyricsResult result) {
     if (_cache.length >= _maxCacheSize) {
       _cache.remove(_cache.keys.first);
@@ -121,22 +134,31 @@ class LyricsService {
     _cache[key] = result;
   }
 
-  static Future<LyricsResult> fetchLyrics(String title, String artist) async {
+  static Future<LyricsResult> fetchLyrics(
+    String title,
+    String artist, {
+    bool forceRefresh = false,
+  }) async {
     final cleanTitle = cleanString(title);
     final cleanArtist = cleanString(artist);
     final cacheKey = '${cleanTitle.toLowerCase()}___${cleanArtist.toLowerCase()}';
 
-    if (_cache.containsKey(cacheKey)) {
+    if (!forceRefresh && _cache.containsKey(cacheKey)) {
       return _cache[cacheKey]!;
     }
 
+    const headers = {
+      'User-Agent': 'PulsePipe/1.0 (https://github.com/taezeem14/PulsePipe)',
+      'Accept': 'application/json',
+    };
+
+    // 1. Direct match by track and artist
     try {
-      // 1. Direct match by track and artist
       final getUrl = Uri.https('lrclib.net', '/api/get', {
         'track_name': cleanTitle,
         'artist_name': cleanArtist,
       });
-      final resp = await http.get(getUrl, headers: {'User-Agent': 'EmberMusicApp/1.0'}).timeout(const Duration(seconds: 5));
+      final resp = await http.get(getUrl, headers: headers).timeout(const Duration(seconds: 4));
 
       if (resp.statusCode == 200) {
         final decoded = jsonDecode(resp.body);
@@ -156,36 +178,46 @@ class LyricsService {
             return result;
           }
         }
+      } else if (resp.statusCode == 429) {
+        debugPrint('[LyricsService] LRCLib rate limit on /api/get');
+        return LyricsResult.empty;
       }
+    } catch (e) {
+      debugPrint('[LyricsService] Direct match error: $e');
+    }
 
-      // 2. Search fallback
+    // 2. Search fallback
+    try {
       final queryParam = '$cleanTitle $cleanArtist'.trim();
       final searchUrl = Uri.https('lrclib.net', '/api/search', {
         'q': queryParam,
       });
-      final searchResp = await http.get(searchUrl, headers: {'User-Agent': 'EmberMusicApp/1.0'}).timeout(const Duration(seconds: 5));
+      final searchResp = await http.get(searchUrl, headers: headers).timeout(const Duration(seconds: 5));
 
       if (searchResp.statusCode == 200) {
         final decodedList = jsonDecode(searchResp.body);
         if (decodedList is List && decodedList.isNotEmpty) {
-          final firstRaw = decodedList.first;
-          if (firstRaw is Map) {
-            final first = Map<String, dynamic>.from(firstRaw);
-            final syncedStr = first['syncedLyrics'] as String?;
-            final plainStr = first['plainLyrics'] as String? ?? '';
+          for (final rawItem in decodedList) {
+            if (rawItem is! Map) continue;
+            final item = Map<String, dynamic>.from(rawItem);
+            final syncedStr = item['syncedLyrics'] as String?;
+            final plainStr = item['plainLyrics'] as String? ?? '';
             final syncedLines = syncedStr != null ? parseLrc(syncedStr) : <LyricLine>[];
-            final result = LyricsResult(
-              syncedLyrics: syncedLines,
-              plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
-              hasSynced: syncedLines.isNotEmpty,
-            );
-            _cacheLyrics(cacheKey, result);
-            return result;
+
+            if (syncedLines.isNotEmpty || plainStr.trim().isNotEmpty) {
+              final result = LyricsResult(
+                syncedLyrics: syncedLines,
+                plainLyrics: plainStr.isNotEmpty ? plainStr : syncedLines.map((l) => l.text).join('\n'),
+                hasSynced: syncedLines.isNotEmpty,
+              );
+              _cacheLyrics(cacheKey, result);
+              return result;
+            }
           }
         }
       }
     } catch (e) {
-      debugPrint('Lyrics fetch error: $e');
+      debugPrint('[LyricsService] Search fallback error: $e');
     }
 
     return LyricsResult.empty;

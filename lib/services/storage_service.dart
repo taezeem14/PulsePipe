@@ -138,7 +138,7 @@ class StorageService {
 
   List<Playlist> loadPlaylists() {
     if (_prefs == null) {
-      return List.unmodifiable(_memPlaylists);
+      return List<Playlist>.from(_memPlaylists);
     }
     final raw = _prefs.getStringList(_playlistsKey) ?? [];
     final list = <Playlist>[];
@@ -154,6 +154,11 @@ class StorageService {
 
     _memPlaylists.clear();
     _memPlaylists.addAll(list);
+
+    if (raw.length != list.length) {
+      final encoded = list.map((p) => jsonEncode(p.toMap())).toList();
+      _prefs.setStringList(_playlistsKey, encoded);
+    }
 
     return list;
   }
@@ -204,7 +209,7 @@ class StorageService {
 
   List<Song> loadDownloads() {
     if (_prefs == null) {
-      return List.unmodifiable(_memDownloads.where((s) => !Song.isPlaceholder(s)));
+      return List<Song>.from(_memDownloads.where((s) => !Song.isPlaceholder(s)));
     }
     final raw = _prefs.getStringList(_downloadsKey) ?? [];
     final cleaned = raw
@@ -224,6 +229,11 @@ class StorageService {
     _memDownloads.clear();
     _memDownloads.addAll(cleaned);
 
+    if (raw.length != cleaned.length) {
+      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+      _prefs.setStringList(_downloadsKey, encoded);
+    }
+
     return cleaned;
   }
 
@@ -235,6 +245,25 @@ class StorageService {
       final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
       await _prefs.setStringList(_downloadsKey, encoded);
     }
+  }
+
+  static const _repeatModeKey = 'pulsepipe_repeat_mode';
+  static const _shuffleKey = 'pulsepipe_shuffle';
+
+  String loadRepeatMode() {
+    return _prefs?.getString(_repeatModeKey) ?? 'off';
+  }
+
+  Future<void> saveRepeatMode(String mode) async {
+    await _prefs?.setString(_repeatModeKey, mode);
+  }
+
+  bool loadShuffle() {
+    return _prefs?.getBool(_shuffleKey) ?? false;
+  }
+
+  Future<void> saveShuffle(bool shuffle) async {
+    await _prefs?.setBool(_shuffleKey, shuffle);
   }
 
   double loadPlaybackSpeed() {

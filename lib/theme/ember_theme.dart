@@ -38,7 +38,7 @@ class EmberColors {
   // Text & Content Hierarchy (Pure Contrast)
   static const Color textPrimary = Color(0xFFFFFFFF);
   static const Color textSecondary = Color(0xFFB3B3B3);
-  static const Color textMuted = Color(0xFF727272);
+  static const Color textMuted = Color(0xFF9E9E9E);
 
   // System & Borders
   static const Color outline = Color(0xFF3E3E3E);

@@ -139,12 +139,19 @@ class LogService extends ChangeNotifier {
   static void stream(String tag, String message) => log(LogLevel.stream, tag, message);
   static void exoplayer(String tag, String message) => log(LogLevel.exoplayer, tag, message);
 
+  bool _pendingNotify = false;
   void _addEntry(LogEntry entry) {
     if (_logs.length >= _maxBufferSize) {
       _logs.removeAt(0);
     }
     _logs.add(entry);
-    notifyListeners();
+    if (!_pendingNotify) {
+      _pendingNotify = true;
+      Future.microtask(() {
+        _pendingNotify = false;
+        notifyListeners();
+      });
+    }
   }
 
   // --- PLAYBACK TELEMETRY RECORDERS ---
@@ -261,8 +268,13 @@ class LogService extends ChangeNotifier {
   /// Copies full Markdown report to system clipboard
   Future<void> copyReportToClipboard() async {
     final report = generateMarkdownReport();
-    await Clipboard.setData(ClipboardData(text: report));
-    i('LogExtractor', 'Diagnostic Markdown report copied to clipboard');
+    try {
+      await Clipboard.setData(ClipboardData(text: report));
+      i('LogExtractor', 'Diagnostic Markdown report copied to clipboard');
+    } catch (e) {
+      w('LogExtractor', 'Failed to copy report to clipboard: $e');
+      rethrow;
+    }
   }
 
   /// Exports diagnostic report as structured JSON

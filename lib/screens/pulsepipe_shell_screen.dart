@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
+import '../models/song.dart';
 import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/mini_player.dart';
@@ -18,27 +19,28 @@ class PulsePipeShellScreen extends StatefulWidget {
 
 class _PulsePipeShellScreenState extends State<PulsePipeShellScreen> {
   int _currentIndex = 0;
+  ValueNotifier<Song?>? _errorNotifier;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.read<PlayerProvider>().playbackErrorNotifier.addListener(_onPlaybackError);
-    });
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = Provider.of<PlayerProvider>(context, listen: false).playbackErrorNotifier;
+    if (_errorNotifier != notifier) {
+      _errorNotifier?.removeListener(_onPlaybackError);
+      _errorNotifier = notifier;
+      _errorNotifier?.addListener(_onPlaybackError);
+    }
   }
 
   @override
   void dispose() {
-    try {
-      context.read<PlayerProvider>().playbackErrorNotifier.removeListener(_onPlaybackError);
-    } catch (_) {}
+    _errorNotifier?.removeListener(_onPlaybackError);
     super.dispose();
   }
 
   void _onPlaybackError() {
     if (!mounted) return;
-    final failedSong = context.read<PlayerProvider>().playbackErrorNotifier.value;
+    final failedSong = _errorNotifier?.value;
     if (failedSong == null) return;
 
     ScaffoldMessenger.of(context).showSnackBar(

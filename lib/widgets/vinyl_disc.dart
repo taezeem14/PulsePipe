@@ -38,7 +38,11 @@ class _VinylDiscState extends State<VinylDisc>
     if (widget.isPlaying && !_controller.isAnimating) {
       _controller.repeat();
     } else if (!widget.isPlaying && _controller.isAnimating) {
-      _controller.stop();
+      _controller.animateTo(
+        (_controller.value + 0.05) % 1.0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.decelerate,
+      );
     }
   }
 

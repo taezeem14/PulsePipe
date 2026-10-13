@@ -243,9 +243,10 @@ class TrackOptionsSheet extends StatelessWidget {
                 title: 'Stop Playback / Cut Song',
                 subtitle: 'Immediately stop playing and dismiss active song',
                 onTap: () {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
                   player.stopPlayback();
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(
                       backgroundColor: EmberColors.surfaceContainerHigh,
                       content: Text('Playback stopped', style: TextStyle(color: EmberColors.textPrimary)),
@@ -269,17 +270,18 @@ class TrackOptionsSheet extends StatelessWidget {
               title: isDownloaded ? 'Downloaded (Offline Ready)' : 'Download Audio (MP3)',
               subtitle: 'Save high-bitrate audio to Downloads/Music',
               onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
                 if (!isDownloaded) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(
                       backgroundColor: EmberColors.surfaceContainerHigh,
                       content: Text('Downloading "${song.title}" MP3...', style: const TextStyle(color: EmberColors.primaryAmber)),
                     ),
                   );
                   final path = await player.downloadAudio(song);
-                  if (path != null && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                  if (path != null) {
+                    messenger.showSnackBar(
                       const SnackBar(
                         backgroundColor: EmberColors.surfaceContainerHigh,
                         content: Text('Saved to Downloads/Ember!', style: TextStyle(color: EmberColors.primaryAmberHi)),
@@ -294,16 +296,17 @@ class TrackOptionsSheet extends StatelessWidget {
               title: 'Download Video (MP4)',
               subtitle: 'Save HD video directly to device Gallery/Movies',
               onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(
                     backgroundColor: EmberColors.surfaceContainerHigh,
                     content: Text('Downloading MP4 video for "${song.title}"...', style: const TextStyle(color: EmberColors.primaryAmber)),
                   ),
                 );
                 final path = await player.downloadVideo(song);
-                if (path != null && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                if (path != null) {
+                  messenger.showSnackBar(
                     const SnackBar(
                       backgroundColor: EmberColors.surfaceContainerHigh,
                       content: Text('Video saved to Gallery / Movies!', style: TextStyle(color: EmberColors.primaryAmberHi)),
@@ -317,9 +320,10 @@ class TrackOptionsSheet extends StatelessWidget {
               title: 'Start Radio / Add More Like This',
               subtitle: 'Queue similar tracks with smart recommendations',
               onTap: () {
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
                 player.startRadio(song);
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(
                     backgroundColor: EmberColors.surfaceContainerHigh,
                     content: Text('Started Ember Radio based on "${song.title}"', style: const TextStyle(color: EmberColors.primaryAmberHi)),
@@ -332,9 +336,10 @@ class TrackOptionsSheet extends StatelessWidget {
               title: 'Play Next',
               subtitle: 'Insert track right after current song',
               onTap: () {
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
                 player.playNext(song);
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(
                     backgroundColor: EmberColors.surfaceContainerHigh,
                     content: Text('"${song.title}" will play next', style: const TextStyle(color: EmberColors.primaryAmberHi)),
@@ -347,9 +352,10 @@ class TrackOptionsSheet extends StatelessWidget {
               title: 'Add to Queue',
               subtitle: 'Append track to the bottom of the queue',
               onTap: () {
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
                 player.addToQueue(song);
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(
                     backgroundColor: EmberColors.surfaceContainerHigh,
                     content: Text('Added "${song.title}" to queue', style: const TextStyle(color: EmberColors.primaryAmberHi)),
@@ -363,7 +369,9 @@ class TrackOptionsSheet extends StatelessWidget {
               subtitle: 'Tune frequencies, presets & bass boost',
               onTap: () {
                 Navigator.pop(context);
-                SoundShapingSheet.show(context);
+                Future.microtask(() {
+                  if (context.mounted) SoundShapingSheet.show(context);
+                });
               },
             ),
             _OptionTile(
@@ -372,7 +380,9 @@ class TrackOptionsSheet extends StatelessWidget {
               subtitle: 'Bitrate, codec, duration & stream info',
               onTap: () {
                 Navigator.pop(context);
-                _showSpecsDialog(context);
+                Future.microtask(() {
+                  if (context.mounted) _showSpecsDialog(context);
+                });
               },
             ),
           ],

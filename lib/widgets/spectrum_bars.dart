@@ -40,7 +40,7 @@ class _SpectrumBarsState extends State<SpectrumBars>
     if (widget.isPlaying && !_controller.isAnimating) {
       _controller.repeat();
     } else if (!widget.isPlaying && _controller.isAnimating) {
-      _controller.stop();
+      _controller.animateTo(0.0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     }
   }
 

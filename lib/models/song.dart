@@ -24,7 +24,7 @@ class Song {
     this.source = 'youtube',
   });
 
-  bool get isYouTube => true;
+  bool get isYouTube => source == 'youtube' || source.isEmpty;
   bool get isUnknown => false;
 
   Song copyWith({

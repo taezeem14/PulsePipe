@@ -22,6 +22,22 @@ class PipedService {
     'https://pipedapi.drgns.space',
   ];
 
+  static final Map<String, DateTime> _cooldowns = {};
+  static const Duration _failureCooldown = Duration(minutes: 5);
+
+  static List<String> get _healthyInstances {
+    final now = DateTime.now();
+    final healthy = _instances.where((inst) {
+      final cd = _cooldowns[inst];
+      return cd == null || now.difference(cd) >= _failureCooldown;
+    }).toList();
+    return healthy.isNotEmpty ? healthy : List<String>.from(_instances);
+  }
+
+  static void _markInstanceFailure(String instance) {
+    _cooldowns[instance] = DateTime.now();
+  }
+
   /// Cache resolved streams for 3 hours (googlevideo URLs expire ~6h,
   /// but proxied URLs may have shorter TTLs).
   static final Map<String, _CachedStream> _cache = {};
@@ -38,14 +54,16 @@ class PipedService {
       return cached.url;
     }
 
-    for (final instance in _instances) {
+    for (final instance in _healthyInstances) {
       try {
         final url = Uri.parse('$instance/streams/$videoId');
         final resp = await http.get(url, headers: {
           'Accept': 'application/json',
+          'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
         }).timeout(const Duration(milliseconds: 2500));
 
         if (resp.statusCode != 200) {
+          _markInstanceFailure(instance);
           LogService.w('PipedService', 'Instance $instance returned HTTP ${resp.statusCode} for $videoId');
           continue;
         }
@@ -84,14 +102,19 @@ class PipedService {
 
         // Rewrite direct googlevideo.com URL to go through the Piped proxy
         // This prevents 403 IP-binding errors on mobile networks
-        if (proxyUrl != null && proxyUrl.isNotEmpty && streamUrl.contains('googlevideo.com')) {
+        if (streamUrl.contains('googlevideo.com')) {
+          final proxyTarget = (proxyUrl != null && proxyUrl.isNotEmpty) ? proxyUrl : instance;
           final parsed = Uri.parse(streamUrl);
-          final proxyBase = Uri.parse(proxyUrl);
+          final proxyBase = Uri.parse(proxyTarget);
+          final basePath = proxyBase.path.endsWith('/')
+              ? proxyBase.path.substring(0, proxyBase.path.length - 1)
+              : proxyBase.path;
+
           streamUrl = Uri(
             scheme: proxyBase.scheme,
             host: proxyBase.host,
-            port: proxyBase.port,
-            path: parsed.path,
+            port: proxyBase.hasPort ? proxyBase.port : null,
+            path: '$basePath${parsed.path}',
             query: parsed.query,
           ).toString();
         }
@@ -108,6 +131,7 @@ class PipedService {
         debugPrint('[PipedService] Resolved audio for "$videoId" via $instance (${best['format']} ${best['quality']})');
         return streamUrl;
       } catch (e) {
+        _markInstanceFailure(instance);
         LogService.w('PipedService', 'Instance $instance failed for "$videoId": $e');
         debugPrint('[PipedService] Instance $instance failed for "$videoId": $e');
         continue;
@@ -118,7 +142,9 @@ class PipedService {
     try {
       LogService.stream('PipedService', 'Attempting Invidious API fallback for "$videoId"...');
       final invUrl = Uri.parse('https://invidious.f5.si/api/v1/videos/$videoId');
-      final resp = await http.get(invUrl).timeout(const Duration(seconds: 4));
+      final resp = await http.get(invUrl, headers: {
+        'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
+      }).timeout(const Duration(seconds: 4));
       if (resp.statusCode == 200) {
         final decoded = jsonDecode(resp.body);
         if (decoded is Map) {
@@ -126,8 +152,18 @@ class PipedService {
           final audioList = adaptiveFormats.where((f) => (f['type'] as String? ?? '').contains('audio')).toList();
           if (audioList.isNotEmpty) {
             final best = audioList.first;
-            final streamUrl = best['url'] as String? ?? '';
+            String streamUrl = best['url'] as String? ?? '';
             if (streamUrl.isNotEmpty) {
+              if (streamUrl.contains('googlevideo.com')) {
+                final parsed = Uri.parse(streamUrl);
+                streamUrl = Uri(
+                  scheme: invUrl.scheme,
+                  host: invUrl.host,
+                  port: invUrl.hasPort ? invUrl.port : null,
+                  path: parsed.path,
+                  query: parsed.query,
+                ).toString();
+              }
               LogService.stream('PipedService', 'Resolved audio via Invidious API fallback for "$videoId"');
               return streamUrl;
             }

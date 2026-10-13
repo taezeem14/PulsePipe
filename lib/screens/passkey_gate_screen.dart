@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../services/passkey_service.dart';
@@ -15,7 +16,6 @@ class _PasskeyGateScreenState extends State<PasskeyGateScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   late AnimationController _shakeController;
-  late Animation<double> _shakeAnimation;
   String? _errorMessage;
   bool _loading = false;
 
@@ -26,9 +26,6 @@ class _PasskeyGateScreenState extends State<PasskeyGateScreen>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _shakeAnimation = Tween<double>(begin: 0, end: 12).chain(
-      CurveTween(curve: Curves.elasticIn),
-    ).animate(_shakeController);
   }
 
   @override
@@ -152,12 +149,10 @@ class _PasskeyGateScreenState extends State<PasskeyGateScreen>
 
                       // Input with shake animation
                       AnimatedBuilder(
-                        animation: _shakeAnimation,
+                        animation: _shakeController,
                         builder: (context, child) {
                           final offset = _shakeController.isAnimating
-                              ? (1 - _shakeController.value) *
-                                  12 *
-                                  (_shakeController.value * 6 % 2 == 0 ? 1 : -1)
+                              ? math.sin(_shakeController.value * math.pi * 6) * 10 * (1 - _shakeController.value)
                               : 0.0;
                           return Transform.translate(
                             offset: Offset(offset, 0),

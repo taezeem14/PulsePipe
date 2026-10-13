@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../models/song.dart';
 import '../models/playlist.dart';
 import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
@@ -118,6 +119,46 @@ class PlaylistDetailSheet extends StatelessWidget {
                     ),
                   ),
                   IconButton(
+                    icon: const FaIcon(FontAwesomeIcons.penToSquare, size: 16, color: EmberColors.textMuted),
+                    tooltip: 'Rename Playlist',
+                    onPressed: () {
+                      final textController = TextEditingController(text: currentPl.title);
+                      showDialog(
+                        context: context,
+                        builder: (dCtx) => AlertDialog(
+                          backgroundColor: EmberColors.surfaceContainerHigh,
+                          title: const Text('Rename Playlist', style: TextStyle(color: EmberColors.textPrimary)),
+                          content: TextField(
+                            controller: textController,
+                            autofocus: true,
+                            style: const TextStyle(color: EmberColors.textPrimary),
+                            decoration: const InputDecoration(
+                              hintText: 'Playlist Title',
+                              hintStyle: TextStyle(color: EmberColors.textMuted),
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dCtx),
+                              child: const Text('Cancel', style: TextStyle(color: EmberColors.textMuted)),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: EmberColors.primaryAmber),
+                              onPressed: () {
+                                final newTitle = textController.text.trim();
+                                if (newTitle.isNotEmpty) {
+                                  player.renamePlaylist(currentPl.id, newTitle);
+                                }
+                                Navigator.pop(dCtx);
+                              },
+                              child: const Text('Save', style: TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  IconButton(
                     icon: const FaIcon(FontAwesomeIcons.trashCan, size: 16, color: EmberColors.textMuted),
                     tooltip: 'Delete Playlist',
                     onPressed: () {
@@ -182,8 +223,8 @@ class PlaylistDetailSheet extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 10),
                         ),
                         onPressed: () {
-                          final shuffled = List.from(currentPl.songs)..shuffle();
-                          player.playCategoryTracks(shuffled.cast());
+                          final shuffled = List<Song>.from(currentPl.songs)..shuffle();
+                          player.playCategoryTracks(shuffled);
                           Navigator.pop(context);
                         },
                         icon: const FaIcon(FontAwesomeIcons.shuffle, size: 14),
@@ -199,22 +240,25 @@ class PlaylistDetailSheet extends StatelessWidget {
             // Song list
             Expanded(
               child: currentPl.songs.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            FaIcon(FontAwesomeIcons.music, size: 36, color: EmberColors.textMuted),
-                            SizedBox(height: 12),
-                            Text('No songs in this playlist yet', style: TextStyle(color: EmberColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
-                            SizedBox(height: 6),
-                            Text(
-                              'Tap the three dots on any song and select "Add to Playlist".',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: EmberColors.textMuted, fontSize: 12),
-                            ),
-                          ],
+                  ? SingleChildScrollView(
+                      controller: scrollController,
+                      child: const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 60.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FaIcon(FontAwesomeIcons.music, size: 36, color: EmberColors.textMuted),
+                              SizedBox(height: 12),
+                              Text('No songs in this playlist yet', style: TextStyle(color: EmberColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                              SizedBox(height: 6),
+                              Text(
+                                'Tap the three dots on any song and select "Add to Playlist".',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: EmberColors.textMuted, fontSize: 12),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     )
@@ -236,7 +280,7 @@ class PlaylistDetailSheet extends StatelessWidget {
                             child: const FaIcon(FontAwesomeIcons.trashCan, color: Colors.white, size: 16),
                           ),
                           onDismissed: (_) {
-                            player.removeSongFromPlaylist(currentPl.id, song.id);
+                            player.removeSongFromPlaylistAt(currentPl.id, index);
                           },
                           child: Container(
                             margin: const EdgeInsets.symmetric(vertical: 3),

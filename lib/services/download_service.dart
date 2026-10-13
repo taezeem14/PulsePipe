@@ -28,6 +28,8 @@ class DownloadProgress {
 }
 
 class DownloadService {
+  DownloadService._();
+
   static final Map<String, DownloadProgress> _activeDownloads = {};
   static final StreamController<DownloadProgress> _progressController =
       StreamController<DownloadProgress>.broadcast();
@@ -36,37 +38,73 @@ class DownloadService {
   static Map<String, DownloadProgress> get activeDownloads => _activeDownloads;
 
   static String _sanitizeFilename(String input) {
-    return input.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    // Strip illegal filesystem and control characters
+    var clean = input
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F\\/:*?"<>|]'), '_')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    // Strip trailing periods and spaces (prohibited on Windows)
+    clean = clean.replaceAll(RegExp(r'[.\s]+$'), '');
+
+    // Guard against Windows reserved device names
+    const reserved = {
+      'CON', 'PRN', 'AUX', 'NUL',
+      'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+      'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+    };
+    if (reserved.contains(clean.toUpperCase())) {
+      clean = 'track_$clean';
+    }
+
+    return clean.isNotEmpty ? clean : 'track_${DateTime.now().millisecondsSinceEpoch}';
   }
 
-  /// Locate or create appropriate public/accessible media directory on Android
+  /// Locate or create appropriate public/accessible media directory cross-platform
   static Future<Directory> _getMediaDirectory({bool isVideo = false}) async {
-    // 1. Try public Android standard directory
-    try {
-      final baseDir = isVideo
-          ? Directory('/storage/emulated/0/Movies/PulsePipe')
-          : Directory('/storage/emulated/0/Download/PulsePipe');
-
-      if (!await baseDir.exists()) {
-        await baseDir.create(recursive: true);
-      }
-      return baseDir;
-    } catch (_) {}
-
-    // 2. Fallback to app external storage
-    try {
-      final ext = await getExternalStorageDirectory();
-      if (ext != null) {
-        final dir = Directory('${ext.path}/PulsePipe');
-        if (!await dir.exists()) {
-          await dir.create(recursive: true);
+    if (Platform.isAndroid) {
+      try {
+        final extList = await getExternalStorageDirectories(
+          type: isVideo ? StorageDirectory.movies : StorageDirectory.downloads,
+        );
+        if (extList != null && extList.isNotEmpty) {
+          final dir = Directory('${extList.first.path}/PulsePipe');
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return dir;
         }
-        return dir;
-      }
-    } catch (_) {}
+      } catch (_) {}
 
-    // 3. Fallback to standard app documents directory
-    return await getApplicationDocumentsDirectory();
+      try {
+        final ext = await getExternalStorageDirectory();
+        if (ext != null) {
+          final dir = Directory('${ext.path}/PulsePipe');
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return dir;
+        }
+      } catch (_) {}
+    } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      try {
+        final downloads = await getDownloadsDirectory();
+        if (downloads != null) {
+          final dir = Directory('${downloads.path}/PulsePipe');
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return dir;
+        }
+      } catch (_) {}
+    }
+
+    final docs = await getApplicationDocumentsDirectory();
+    final dir = Directory('${docs.path}/PulsePipe');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
   }
 
   /// Resolve any song to a valid YouTube Video ID
@@ -88,7 +126,7 @@ class DownloadService {
         return searchResults.first.id.value;
       }
     } catch (e) {
-      debugPrint('Error searching video ID for download: $e');
+      debugPrint('[DownloadService] Error searching video ID for download: $e');
     }
     return null;
   }
@@ -96,8 +134,19 @@ class DownloadService {
   /// Download audio directly to device storage for offline playback
   static Future<String?> downloadAudio(Song song, StorageService storageService) async {
     final songId = song.id;
-    if (_activeDownloads[songId]?.isCompleted == false && _activeDownloads[songId]?.isFailed == false) {
-      return null; // Already downloading
+
+    // Check active in-progress downloads
+    final active = _activeDownloads[songId];
+    if (active != null && !active.isCompleted && !active.isFailed) {
+      return null; // Already in progress
+    }
+
+    // Return immediately if already completed and file exists on disk
+    if (active != null && active.isCompleted && active.localFilePath != null) {
+      final f = File(active.localFilePath!);
+      if (await f.exists() && await f.length() > 0) {
+        return active.localFilePath;
+      }
     }
 
     _activeDownloads[songId] = DownloadProgress(songId: songId, progress: 0.0);
@@ -126,15 +175,17 @@ class DownloadService {
       }
 
       final dir = await _getMediaDirectory(isVideo: false);
-      final sanitized = _sanitizeFilename('${song.title} - ${song.artist}').trim();
-      final safeTitle = sanitized.isNotEmpty ? sanitized : 'track_${song.id}';
+      final rawBase = _sanitizeFilename('${song.title} - ${song.artist}');
+      final safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
+      final safeId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
       final ext = audioStreamInfo.container.name.toLowerCase() == 'mp4' ? 'm4a' : audioStreamInfo.container.name.toLowerCase();
-      final file = File('${dir.path}/$safeTitle.$ext');
+      final file = File('${dir.path}/${safeBase}_$safeId.$ext');
+      final partFile = File('${file.path}.part');
 
       final stream = yt.videos.streamsClient.get(audioStreamInfo);
       IOSink? output;
       try {
-        output = file.openWrite();
+        output = partFile.openWrite();
         var received = 0;
         final total = audioStreamInfo.size.totalBytes;
 
@@ -145,19 +196,28 @@ class DownloadService {
           _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
           _progressController.add(_activeDownloads[songId]!);
         }
+
         await output.flush();
-      } catch (e) {
+        await output.close();
+        output = null;
+
         if (await file.exists()) {
           try { await file.delete(); } catch (_) {}
         }
+        await partFile.rename(file.path);
+      } catch (e) {
+        try { await output?.close(); } catch (_) {}
+        output = null;
+        if (await partFile.exists()) {
+          try { await partFile.delete(); } catch (_) {}
+        }
         rethrow;
-      } finally {
-        await output?.close();
       }
 
       // Record in storage as downloaded
       final downloadedSong = song.copyWith(
         streamUrl: file.path, // Use local path for offline playback
+        source: 'download',
       );
       final currentDownloads = storageService.loadDownloads();
       currentDownloads.removeWhere((s) => s.id == song.id);
@@ -173,7 +233,7 @@ class DownloadService {
       _progressController.add(_activeDownloads[songId]!);
       return file.path;
     } catch (e) {
-      debugPrint('Audio download error: $e');
+      debugPrint('[DownloadService] Audio download error: $e');
       _activeDownloads[songId] = DownloadProgress(
         songId: songId,
         progress: 0.0,
@@ -187,10 +247,11 @@ class DownloadService {
     }
   }
 
-  /// Download MP4 Video directly to device Movies/Ember folder
+  /// Download MP4 Video directly to device Movies folder
   static Future<String?> downloadVideo(Song song) async {
     final videoIdKey = 'video_${song.id}';
-    if (_activeDownloads[videoIdKey]?.isCompleted == false && _activeDownloads[videoIdKey]?.isFailed == false) {
+    final active = _activeDownloads[videoIdKey];
+    if (active != null && !active.isCompleted && !active.isFailed) {
       return null; // Already downloading
     }
 
@@ -206,30 +267,26 @@ class DownloadService {
 
       final manifest = await yt.videos.streamsClient.getManifest(videoId, requireWatchPage: false).timeout(const Duration(seconds: 12));
 
-      // 1. Prioritize muxed stream (contains BOTH high-definition video and audio in MP4 container)
+      // Strictly prioritize muxed streams (both video AND audio track in MP4 container)
       StreamInfo? streamInfo;
       final muxedStreams = manifest.muxed.sortByVideoQuality();
       if (muxedStreams.isNotEmpty) {
         streamInfo = muxedStreams.first;
-      } else if (manifest.videoOnly.isNotEmpty) {
-        streamInfo = manifest.videoOnly.withHighestBitrate();
-      } else if (manifest.streams.isNotEmpty) {
-        streamInfo = manifest.streams.first;
-      }
-
-      if (streamInfo == null) {
-        throw Exception('No playable video stream found for "${song.title}"');
+      } else {
+        throw Exception('No playable audio/video muxed stream available for "${song.title}"');
       }
 
       final dir = await _getMediaDirectory(isVideo: true);
-      final sanitized = _sanitizeFilename('${song.title} - ${song.artist}').trim();
-      final safeTitle = sanitized.isNotEmpty ? sanitized : 'video_${song.id}';
-      final file = File('${dir.path}/$safeTitle.mp4');
+      final rawBase = _sanitizeFilename('${song.title} - ${song.artist}');
+      final safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
+      final safeId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      final file = File('${dir.path}/${safeBase}_$safeId.mp4');
+      final partFile = File('${file.path}.part');
 
       final stream = yt.videos.streamsClient.get(streamInfo);
       IOSink? output;
       try {
-        output = file.openWrite();
+        output = partFile.openWrite();
         var received = 0;
         final total = streamInfo.size.totalBytes;
 
@@ -246,13 +303,20 @@ class DownloadService {
         }
 
         await output.flush();
-      } catch (e) {
+        await output.close();
+        output = null;
+
         if (await file.exists()) {
           try { await file.delete(); } catch (_) {}
         }
+        await partFile.rename(file.path);
+      } catch (e) {
+        try { await output?.close(); } catch (_) {}
+        output = null;
+        if (await partFile.exists()) {
+          try { await partFile.delete(); } catch (_) {}
+        }
         rethrow;
-      } finally {
-        await output?.close();
       }
 
       _activeDownloads[videoIdKey] = DownloadProgress(
@@ -265,7 +329,7 @@ class DownloadService {
       _progressController.add(_activeDownloads[videoIdKey]!);
       return file.path;
     } catch (e) {
-      debugPrint('Video download error: $e');
+      debugPrint('[DownloadService] Video download error: $e');
       _activeDownloads[videoIdKey] = DownloadProgress(
         songId: videoIdKey,
         progress: 0.0,

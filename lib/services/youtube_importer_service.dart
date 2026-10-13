@@ -99,6 +99,16 @@ class YouTubeImporterService {
     _streamCache.clear();
   }
 
+  /// Safely extracts text from InnerTube runs or simpleText maps
+  static String? _extractText(dynamic obj) {
+    if (obj is! Map) return null;
+    final runs = obj['runs'];
+    if (runs is List && runs.isNotEmpty && runs.first is Map) {
+      return runs.first['text'] as String?;
+    }
+    return obj['simpleText'] as String?;
+  }
+
   /// Smart YouTube metadata cleaner: extracts true song title, artist, and clean search query
   static ({String cleanTitle, String cleanArtist, String searchQuery}) parseYouTubeMetadata(String rawTitle, String rawAuthor) {
     var t = rawTitle
@@ -152,7 +162,9 @@ class YouTubeImporterService {
         .replaceAll(RegExp(r'\b(?:feat\.|ft\.)\s+[A-Za-z0-9\s,&]+', caseSensitive: false), '')
         .trim();
 
-    if (extractedTitle.isEmpty) extractedTitle = t;
+    if (extractedTitle.isEmpty) {
+      extractedTitle = t.isNotEmpty ? t : (rawTitle.trim().isNotEmpty ? rawTitle.trim() : 'YouTube Song');
+    }
 
     final searchQuery = finalArtist.isNotEmpty ? '$extractedTitle $finalArtist' : extractedTitle;
     return (
@@ -359,10 +371,8 @@ class YouTubeImporterService {
 
             if (!seenIds.contains(vId)) {
               seenIds.add(vId);
-              final trackTitle = renderer['title']?['simpleText'] as String? ??
-                  renderer['title']?['runs']?[0]?['text'] as String? ??
-                  'YouTube Track';
-              final trackAuthor = renderer['shortBylineText']?['runs']?[0]?['text'] as String? ?? author;
+              final trackTitle = _extractText(renderer['title']) ?? 'YouTube Track';
+              final trackAuthor = _extractText(renderer['shortBylineText']) ?? author;
               final meta = parseYouTubeMetadata(trackTitle, trackAuthor);
               final durText = renderer['lengthText']?['simpleText'] as String?;
               final thumbs = renderer['thumbnail']?['thumbnails'] as List?;
@@ -587,12 +597,8 @@ class YouTubeImporterService {
               final vId = v['videoId'] as String?;
               if (vId == null || vId.isEmpty) continue;
 
-              final title = v['title']?['runs']?[0]?['text'] as String? ??
-                  v['title']?['simpleText'] as String? ??
-                  'YouTube Song';
-              final author = v['ownerText']?['runs']?[0]?['text'] as String? ??
-                  v['shortBylineText']?['runs']?[0]?['text'] as String? ??
-                  'YouTube';
+              final title = _extractText(v['title']) ?? 'YouTube Song';
+              final author = _extractText(v['ownerText']) ?? _extractText(v['shortBylineText']) ?? 'YouTube';
               final durText = v['lengthText']?['simpleText'] as String?;
 
               songs.add(
@@ -652,7 +658,7 @@ class YouTubeImporterService {
       if (pipedItems.isNotEmpty) {
         final pipedSongs = pipedItems.take(limit).map((item) {
           final rawUrl = item['url'] as String? ?? '';
-          final vid = rawUrl.replaceFirst('/watch?v=', '').trim();
+          final vid = extractVideoId(rawUrl) ?? rawUrl.replaceFirst('/watch?v=', '').split('&').first.trim();
           final durSecs = (item['duration'] as num?)?.toInt() ?? 210;
           return Song(
             id: 'yt_$vid',
