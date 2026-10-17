@@ -14,12 +14,13 @@ class PipedService {
   PipedService._();
 
   static const _instances = [
-    'https://pipedapi.smnz.de',
     'https://pipedapi.adminforge.de',
-    'https://piped-api.lunar.icu',
-    'https://pipedapi.leptons.xyz',
     'https://pipedapi.ducks.party',
     'https://pipedapi.drgns.space',
+    'https://pipedapi.smnz.de',
+    'https://piped-api.lunar.icu',
+    'https://pipedapi.leptons.xyz',
+    'https://api.piped.privacydev.net',
   ];
 
   static final Map<String, DateTime> _cooldowns = {};
@@ -38,10 +39,9 @@ class PipedService {
     _cooldowns[instance] = DateTime.now();
   }
 
-  /// Cache resolved streams for 3 hours (googlevideo URLs expire ~6h,
-  /// but proxied URLs may have shorter TTLs).
+  /// Cache resolved streams for 45 minutes to avoid IP token drift
   static final Map<String, _CachedStream> _cache = {};
-  static const _cacheTtl = Duration(hours: 3);
+  static const _cacheTtl = Duration(minutes: 45);
 
   /// Resolve the best audio stream URL for a YouTube video ID.
   ///
@@ -176,6 +176,70 @@ class PipedService {
 
     LogService.w('PipedService', 'All fallback instances failed for "$videoId"');
     debugPrint('[PipedService] All instances failed for "$videoId"');
+    return null;
+  }
+
+  /// Resolve muxed MP4 Video stream (video + audio combined) for offline video download
+  static Future<String?> getVideoStream(String videoId) async {
+    for (final instance in _healthyInstances) {
+      try {
+        final url = Uri.parse('$instance/streams/$videoId');
+        final resp = await http.get(url, headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
+        }).timeout(const Duration(milliseconds: 4000));
+
+        if (resp.statusCode != 200) {
+          _markInstanceFailure(instance);
+          continue;
+        }
+
+        final decoded = jsonDecode(resp.body);
+        if (decoded is! Map) continue;
+        final data = Map<String, dynamic>.from(decoded);
+        final videoStreams = data['videoStreams'] as List? ?? [];
+        final proxyUrl = data['proxyUrl'] as String?;
+
+        // Look for streams that have video AND audio (videoOnly == false)
+        final muxed = videoStreams
+            .whereType<Map>()
+            .map((s) => Map<String, dynamic>.from(s))
+            .where((s) => s['videoOnly'] == false)
+            .toList();
+
+        if (muxed.isNotEmpty) {
+          // Sort by height descending (e.g. 720p before 360p)
+          muxed.sort((a, b) {
+            final hA = (a['height'] as num?) ?? 0;
+            final hB = (b['height'] as num?) ?? 0;
+            return hB.compareTo(hA);
+          });
+          String streamUrl = muxed.first['url'] as String? ?? '';
+          if (streamUrl.isNotEmpty) {
+            if (streamUrl.contains('googlevideo.com')) {
+              final proxyTarget = (proxyUrl != null && proxyUrl.isNotEmpty) ? proxyUrl : instance;
+              final parsed = Uri.parse(streamUrl);
+              final proxyBase = Uri.parse(proxyTarget);
+              final basePath = proxyBase.path.endsWith('/')
+                  ? proxyBase.path.substring(0, proxyBase.path.length - 1)
+                  : proxyBase.path;
+
+              streamUrl = Uri(
+                scheme: proxyBase.scheme,
+                host: proxyBase.host,
+                port: proxyBase.hasPort ? proxyBase.port : null,
+                path: '$basePath${parsed.path}',
+                query: parsed.query,
+              ).toString();
+            }
+            LogService.stream('PipedService', 'Resolved proxy muxed video for "$videoId" via $instance (${muxed.first['quality']})');
+            return streamUrl;
+          }
+        }
+      } catch (e) {
+        _markInstanceFailure(instance);
+      }
+    }
     return null;
   }
 

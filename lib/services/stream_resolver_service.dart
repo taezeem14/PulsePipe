@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import 'youtube_importer_service.dart';
 import 'log_service.dart';
+
 class StreamResolverService {
   static const int _maxCacheEntries = 100;
   static final Map<String, ({List<String> streams, DateTime cachedAt})> _resolvedCache = {};
@@ -19,6 +21,11 @@ class StreamResolverService {
     _resolvedCache.remove(key);
   }
 
+  /// Manually cache a verified working stream (e.g. from fallback proxy)
+  static void cacheStream(String key, String streamUrl) {
+    _cacheStreams(key, [streamUrl]);
+  }
+
   /// Clears all stream caches across the application
   static void clearAllCaches() {
     _resolvedCache.clear();
@@ -27,11 +34,11 @@ class StreamResolverService {
 
   static final Set<String> _currentlyPreloading = {};
 
-  /// Checks if a song has already been pre-resolved into memory cache
+  /// Checks if a song has already been pre-resolved into memory cache (valid for 30 minutes)
   static bool isPreloaded(Song song) {
     final cacheKey = song.id.isNotEmpty ? song.id : song.streamUrl;
     final cached = _resolvedCache[cacheKey];
-    return cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inHours < 4;
+    return cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inMinutes < 30;
   }
 
   /// Prefetch playable audio stream for a track in the background (WINDOW_SIZE = 1)
@@ -94,7 +101,7 @@ class StreamResolverService {
   static Future<List<String>> resolvePlayableStreamCandidates(Song song) {
     final cacheKey = song.id.isNotEmpty ? song.id : song.streamUrl;
     final cached = _resolvedCache[cacheKey];
-    if (cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inHours < 4) {
+    if (cached != null && cached.streams.isNotEmpty && DateTime.now().difference(cached.cachedAt).inMinutes < 30) {
       LogService.stream('StreamResolver', 'Cache HIT for "${song.title}": ${cached.streams.length} candidate(s)');
       return Future.value(List<String>.from(cached.streams));
     }
@@ -118,8 +125,16 @@ class StreamResolverService {
         s.startsWith('file://') ||
         RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(s);
     if (s.isNotEmpty && isLocal) {
-      LogService.stream('StreamResolver', 'Local offline file identified for "${song.title}": $s');
-      return [s];
+      var checkPath = s.replaceFirst('file://', '');
+      if (Platform.isWindows && checkPath.startsWith('/') && checkPath.length > 2 && checkPath[2] == ':') {
+        checkPath = checkPath.substring(1);
+      }
+      if (File(checkPath).existsSync()) {
+        LogService.stream('StreamResolver', 'Local offline file verified for "${song.title}": $s');
+        return [s];
+      } else {
+        LogService.w('StreamResolver', 'Local file not found on disk ($checkPath). Falling back to YouTube streaming.');
+      }
     }
 
     // 2. Extract YouTube video ID

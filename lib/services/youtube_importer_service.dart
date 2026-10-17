@@ -178,62 +178,71 @@ class YouTubeImporterService {
   /// 1. MP4 / AAC streams (optimal hardware decoding on Android)
   /// 2. WebM / Opus streams (audiophile audio quality)
   /// 3. Muxed MP4 stream fallback
+  static const Duration _streamCacheTtl = Duration(minutes: 30);
+
+  /// Multi-client InnerTube stream extractor: cascades through client profiles to bypass 403 Forbidden
   static Future<List<String>> getAudioStreamUrls(String videoId) async {
     final cleanId = videoId.replaceFirst('yt_', '').trim();
     if (cleanId.isEmpty) return [];
 
     final cached = _streamCache[cleanId];
-    if (cached != null && cached.urls.isNotEmpty && DateTime.now().difference(cached.cachedAt).inHours < 4) {
+    if (cached != null && cached.urls.isNotEmpty && DateTime.now().difference(cached.cachedAt) < _streamCacheTtl) {
       return List.from(cached.urls);
     }
 
-    // Tier 1: Persistent YoutubeExplode (deciphers signatures and resolves in ~400-800ms with warm connection)
-    try {
-      LogService.stream('YouTubeEngine', 'Querying InnerTube manifest for $cleanId...');
-      StreamManifest manifest;
+    // Client cascade priority based on yt-dlp / NewPipe resilience:
+    // 1. androidSdkless: Standard high-bitrate AAC/Opus, no androidSdkVersion check (avoids PO token)
+    // 2. ios: Uses clean iOS InnerTube endpoint, immune to JS signature cipher
+    // 3. androidVr: Meta Quest 3 endpoint, often bypasses regular mobile rate-limits
+    // 4. androidMusic: YouTube Music endpoint, dedicated audio streams
+    final clientProfiles = [
+      [YoutubeApiClient.androidSdkless],
+      [YoutubeApiClient.ios],
+      [YoutubeApiClient.androidVr],
+      [YoutubeApiClient.androidMusic],
+    ];
+
+    for (final clients in clientProfiles) {
       try {
-        manifest = await _yt.videos.streamsClient.getManifest(
+        final clientName = clients.first.payload['context']['client']['clientName'] ?? 'InnerTube';
+        LogService.stream('YouTubeEngine', 'Querying InnerTube manifest for $cleanId using $clientName...');
+
+        final manifest = await _yt.videos.streamsClient.getManifest(
           cleanId,
+          ytClients: clients,
           requireWatchPage: false,
         ).timeout(const Duration(seconds: 6));
-      } catch (innerErr) {
-        LogService.stream('YouTubeEngine', 'InnerTube primary manifest query failed ($innerErr), attempting watch page manifest...');
-        manifest = await _yt.videos.streamsClient.getManifest(
-          cleanId,
-          requireWatchPage: true,
-        ).timeout(const Duration(seconds: 8));
-      }
 
-      final candidates = <String>[];
+        final candidates = <String>[];
 
-      // High-speed audio stream prioritization for Android ExoPlayer:
-      // 1. Primary: Muxed MP4 (itag 18, 360p progressive container with AAC audio)
-      // Instant connection on Android ExoPlayer, immune to DASH cipher throttling, plays in ~1.2s
-      final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
-      if (muxedMp4.isNotEmpty) {
-        candidates.add(muxedMp4.withHighestBitrate().url.toString());
-      }
+        // 1. Primary: Muxed MP4 (itag 18, 360p progressive container with AAC audio)
+        // Instant connection on Android ExoPlayer, immune to DASH cipher throttling, plays in ~1.2s
+        final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+        if (muxedMp4.isNotEmpty) {
+          candidates.add(muxedMp4.withHighestBitrate().url.toString());
+        }
 
-      // 2. Secondary: MP4 / M4A AAC (itag 140, ~128kbps) standalone audio stream
-      final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
-      if (mp4Audio.isNotEmpty) {
-        candidates.add(mp4Audio.withHighestBitrate().url.toString());
-      }
+        // 2. Secondary: MP4 / M4A AAC (itag 140, ~128kbps) standalone audio stream
+        final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+        if (mp4Audio.isNotEmpty) {
+          candidates.add(mp4Audio.withHighestBitrate().url.toString());
+        }
 
-      // 3. Tertiary: WebM Opus (itag 251, ~160kbps) high-fidelity audio stream fallback
-      final webmAudio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'webm').toList();
-      if (webmAudio.isNotEmpty) {
-        candidates.add(webmAudio.withHighestBitrate().url.toString());
-      }
+        // 3. Tertiary: WebM Opus (itag 251, ~160kbps) high-fidelity audio stream fallback
+        final webmAudio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'webm').toList();
+        if (webmAudio.isNotEmpty) {
+          candidates.add(webmAudio.withHighestBitrate().url.toString());
+        }
 
-      if (candidates.isNotEmpty) {
-        LogService.stream('YouTubeEngine', 'InnerTube resolved ${candidates.length} candidate(s) for $cleanId');
-        _cacheStreams(cleanId, candidates);
-        return candidates;
+        if (candidates.isNotEmpty) {
+          LogService.stream('YouTubeEngine', 'InnerTube resolved ${candidates.length} candidate(s) via $clientName for $cleanId');
+          _cacheStreams(cleanId, candidates);
+          return candidates;
+        }
+      } catch (e) {
+        LogService.w('YouTubeEngine', 'InnerTube attempt failed for $cleanId: $e');
+        continue;
       }
-    } catch (e) {
-      LogService.w('YouTubeEngine', 'youtube_explode manifest error for $cleanId: $e');
-      debugPrint('[YouTube] youtube_explode_dart getAudioStreamUrls error for $cleanId: $e');
     }
 
     // Tier 3: High-speed Piped API proxy fallback

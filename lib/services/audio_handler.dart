@@ -62,22 +62,24 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   final Set<String> _skippedSegmentKeys = {};
   bool _isSkippingSponsor = false;
 
-  /// NewPipe YouTube streaming headers for ExoPlayer HTTP data source
+  /// Clean Android ExoPlayer streaming headers for GoogleVideo CDN
+  /// Never send web CORS headers (Origin/Referer/Sec-Fetch-*) on Android streams,
+  /// nor hardcoded Range headers (Range: bytes=0-) which conflict with ExoPlayer's internal chunker.
   static const Map<String, String> _youtubeHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
-    'Origin': 'https://www.youtube.com',
-    'Referer': 'https://www.youtube.com/',
-    'Sec-Fetch-Dest': 'empty',
-    'Sec-Fetch-Mode': 'cors',
-    'Sec-Fetch-Site': 'cross-site',
+    'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
     'Accept': '*/*',
-    'Range': 'bytes=0-',
+    'Accept-Encoding': 'identity',
   };
 
   static const Map<String, String> _proxyHeaders = {
     'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
     'Accept': '*/*',
   };
+
+  Duration _lastKnownPosition = Duration.zero;
+  bool _isReconnecting = false;
+  int _consecutiveReconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 3;
 
   static String _resolveFilePath(String uriOrPath) {
     if (uriOrPath.startsWith('file://')) {
@@ -252,28 +254,20 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           final total = _player.duration;
           final pos = _player.position;
           // Verify track genuinely played near completion (> 85% or within 4s of end)
-          // If total is null or <= 5 seconds, this is a decode/network failure, NOT a genuine completion!
-          if (total == null || total.inSeconds <= 5) {
-            debugPrint('[AudioHandler] Abnormal completion failure detected (pos: ${pos.inSeconds}s, total: ${total?.inSeconds}s)');
-            _currentTrackActive = false;
-            _completionHandled = true;
-            if (_currentSong != null) {
-              _onPlaybackFailed?.call(_currentSong!);
-            }
-            return;
-          }
-          final isNearEnd = pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85);
+          // If total is null or <= 5 seconds, or pos is far from end, this is a premature network disconnect or socket EOF!
+          final isNearEnd = total != null &&
+              total.inSeconds > 5 &&
+              (pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85));
+
           if (!isNearEnd) {
-            debugPrint('[AudioHandler] Premature completion event detected (pos: ${pos.inSeconds}s, total: ${total.inSeconds}s)');
-            _currentTrackActive = false;
-            _completionHandled = true;
-            if (_currentSong != null) {
-              _onPlaybackFailed?.call(_currentSong!);
-            }
+            debugPrint('[AudioHandler] Premature completion event detected (pos: ${pos.inSeconds}s, total: ${total?.inSeconds}s). Attempting auto-reconnect...');
+            _handleMidStreamNetworkDrop();
             return;
           }
+
           _currentTrackActive = false;
           _completionHandled = true;
+          _consecutiveReconnectAttempts = 0;
           debugPrint('[AudioHandler] Track "${_currentSong?.title}" completed playback cleanly. Invoking onCompleted.');
           _onCompleted?.call().catchError((e) {
             debugPrint('[AudioHandler] Error in _onCompleted callback: $e');
@@ -288,6 +282,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     // SponsorBlock: auto-skip promotional/intro segments during YouTube playback
     _player.positionStream.listen(
       (pos) {
+        _lastKnownPosition = pos;
         if (_activeSponsorSegments.isNotEmpty && !_isSkippingSponsor) {
           final currentSec = pos.inMilliseconds / 1000.0;
           final totalSec = (_player.duration?.inMilliseconds ?? 0) / 1000.0;
@@ -327,6 +322,119 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         LogService.w('AudioHandler', 'positionStream error: $e');
       },
     );
+  }
+
+  /// NewPipe-style auto-reconnection on mid-stream network drop or socket severance
+  Future<void> _handleMidStreamNetworkDrop() async {
+    if (_isReconnecting) return;
+    if (_currentSong == null) return;
+    final targetSong = _currentSong!;
+    final resumePos = _lastKnownPosition;
+
+    if (_consecutiveReconnectAttempts >= _maxReconnectAttempts) {
+      LogService.w('AudioHandler', 'Max reconnect attempts reached for "${targetSong.title}". Skipping to next track.');
+      _isReconnecting = false;
+      _currentTrackActive = false;
+      _completionHandled = true;
+      _consecutiveReconnectAttempts = 0;
+      _onPlaybackFailed?.call(targetSong);
+      return;
+    }
+
+    _isReconnecting = true;
+    _consecutiveReconnectAttempts++;
+
+    final backoffMs = _consecutiveReconnectAttempts * 750;
+    LogService.stream('AudioHandler', 'Network interrupted. Reconnecting (attempt $_consecutiveReconnectAttempts/$_maxReconnectAttempts) in ${backoffMs}ms from ${resumePos.inSeconds}s...');
+
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.buffering,
+        playing: true,
+        updatePosition: resumePos,
+      ),
+    );
+
+    await Future.delayed(Duration(milliseconds: backoffMs));
+    if (_currentSong?.id != targetSong.id) {
+      _isReconnecting = false;
+      return;
+    }
+
+    // Invalidate stream cache so we obtain fresh stream URLs and tokens
+    StreamResolverService.invalidateCache(targetSong.id);
+    YouTubeImporterService.invalidateCache(targetSong.id);
+
+    try {
+      final candidates = await StreamResolverService.resolvePlayableStreamCandidates(targetSong);
+      bool reconnected = false;
+
+      for (int i = 0; i < candidates.length; i++) {
+        if (_currentSong?.id != targetSong.id) return;
+        final url = candidates[i];
+        if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
+        final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
+
+        try {
+          await _player.setUrl(
+            url,
+            headers: isYouTubeStream ? _youtubeHeaders : null,
+            initialPosition: resumePos,
+            preload: true,
+          ).timeout(const Duration(seconds: 4));
+
+          await _player.play();
+          reconnected = true;
+          _isReconnecting = false;
+          _consecutiveReconnectAttempts = 0;
+          _currentTrackActive = true;
+          _completionHandled = false;
+          LogService.stream('AudioHandler', 'Successfully resumed "${targetSong.title}" from ${resumePos.inSeconds}s!');
+          return;
+        } catch (e) {
+          try { await _player.stop(); } catch (_) {}
+          if (e.toString().contains('403')) break; // Fast bypass to proxy
+        }
+      }
+
+      // Try Piped / Invidious fallback if direct candidates failed
+      if (!reconnected && _currentSong?.id == targetSong.id) {
+        final videoId = targetSong.id.startsWith('yt_')
+            ? targetSong.id.replaceFirst('yt_', '')
+            : YouTubeImporterService.extractVideoId(targetSong.streamUrl);
+        if (videoId != null && videoId.isNotEmpty) {
+          final pipedUrl = await PipedService.getAudioStream(videoId);
+          if (pipedUrl != null && pipedUrl.isNotEmpty && _currentSong?.id == targetSong.id) {
+            await _player.setUrl(
+              pipedUrl,
+              headers: _proxyHeaders,
+              initialPosition: resumePos,
+              preload: true,
+            ).timeout(const Duration(seconds: 7));
+
+            await _player.play();
+            _isReconnecting = false;
+            _consecutiveReconnectAttempts = 0;
+            _currentTrackActive = true;
+            _completionHandled = false;
+            LogService.stream('AudioHandler', 'Successfully resumed "${targetSong.title}" via fallback proxy from ${resumePos.inSeconds}s!');
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[AudioHandler] Reconnect error: $e');
+    }
+
+    _isReconnecting = false;
+    if (_consecutiveReconnectAttempts < _maxReconnectAttempts) {
+      _handleMidStreamNetworkDrop();
+    } else {
+      _currentTrackActive = false;
+      _completionHandled = true;
+      _consecutiveReconnectAttempts = 0;
+      _onPlaybackFailed?.call(targetSong);
+    }
   }
 
   Future<void> playSong(Song song) async {
@@ -436,7 +544,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
         // Attempt 1: Standard YouTube streaming headers
         try {
-          LogService.stream('AudioHandler', 'Connecting to candidate #${i + 1} with YouTube streaming headers...');
+          LogService.stream('AudioHandler', 'Connecting to candidate #${i + 1} with Android ExoPlayer headers...');
           await _player.setUrl(
             url,
             headers: isYouTubeStream ? _youtubeHeaders : null,
@@ -455,6 +563,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         } catch (e) {
           try { await _player.stop(); } catch (_) {}
           LogService.w('AudioHandler', 'Candidate #${i + 1} with headers failed: $e. Retrying raw...');
+          if (e.toString().contains('403') || e.toString().contains('InvalidResponseCodeException: 403')) {
+            LogService.w('AudioHandler', 'HTTP 403 detected on direct stream. Bypassing directly to Proxy Fallback Engine...');
+            break;
+          }
         }
 
         // Attempt 2: Standard setUrl without headers (quick 3s fallback)
@@ -504,6 +616,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
               await _player.play();
               started = true;
               LogService.instance.recordPlaybackSuccess(song);
+              StreamResolverService.cacheStream(song.id, pipedUrl);
               debugPrint('Successfully playing "${song.title}" via Piped proxy fallback');
             }
           } catch (e) {

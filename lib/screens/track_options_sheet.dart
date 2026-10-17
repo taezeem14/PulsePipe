@@ -284,7 +284,14 @@ class TrackOptionsSheet extends StatelessWidget {
                     messenger.showSnackBar(
                       const SnackBar(
                         backgroundColor: EmberColors.surfaceContainerHigh,
-                        content: Text('Saved to Downloads/Ember!', style: TextStyle(color: EmberColors.primaryAmberHi)),
+                        content: Text('Saved to Downloads/PulsePipe!', style: TextStyle(color: EmberColors.primaryAmberHi)),
+                      ),
+                    );
+                  } else {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        backgroundColor: EmberColors.surfaceContainerHigh,
+                        content: Text('Audio download failed. Check network or storage.', style: TextStyle(color: EmberColors.error)),
                       ),
                     );
                   }
@@ -310,6 +317,13 @@ class TrackOptionsSheet extends StatelessWidget {
                     const SnackBar(
                       backgroundColor: EmberColors.surfaceContainerHigh,
                       content: Text('Video saved to Gallery / Movies!', style: TextStyle(color: EmberColors.primaryAmberHi)),
+                    ),
+                  );
+                } else {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      backgroundColor: EmberColors.surfaceContainerHigh,
+                      content: Text('Video download failed. Check network or storage.', style: TextStyle(color: EmberColors.error)),
                     ),
                   );
                 }

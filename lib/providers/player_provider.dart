@@ -177,9 +177,16 @@ class PlayerProvider extends ChangeNotifier {
         playbackErrorNotifier.value = failedSong;
         StreamResolverService.invalidateCache(failedSong.id);
         YouTubeImporterService.invalidateCache(failedSong.id);
-        _isPlaying = false;
-        _isLoadingStream = false;
-        notifyListeners();
+
+        // Resilient auto-advance: if in a playlist or queue, keep playing next track instead of cutting off!
+        if (_queue.length > 1 && _consecutiveStreamFailures < 3) {
+          debugPrint('[PlayerProvider] Auto-advancing to next track after failure...');
+          skipNext(isAuto: true);
+        } else {
+          _isPlaying = false;
+          _isLoadingStream = false;
+          notifyListeners();
+        }
       },
     );
 
@@ -390,6 +397,20 @@ class PlayerProvider extends ChangeNotifier {
 
     final thisSession = ++_playSessionId;
 
+    // Offline interception: if this song was downloaded to disk, play offline seamlessly
+    Song resolvedSong = song;
+    final downloadedIndex = _downloads.indexWhere((d) => d.id == song.id);
+    if (downloadedIndex != -1) {
+      final downloaded = _downloads[downloadedIndex];
+      var checkPath = downloaded.streamUrl.replaceFirst('file://', '');
+      if (Platform.isWindows && checkPath.startsWith('/') && checkPath.length > 2 && checkPath[2] == ':') {
+        checkPath = checkPath.substring(1);
+      }
+      if (File(checkPath).existsSync()) {
+        resolvedSong = downloaded;
+      }
+    }
+
     // Defer auxiliary metadata until after song playback has initiated
     // (giving 100% network bandwidth to the initial audio chunks)
     Future.delayed(const Duration(milliseconds: 1200), () {
@@ -399,7 +420,7 @@ class PlayerProvider extends ChangeNotifier {
       }
     });
 
-    await _audioHandler.playSong(song);
+    await _audioHandler.playSong(resolvedSong);
     if (_playSessionId != thisSession) {
       // Newer song selection superseded this one; discard outdated state updates
       return;
