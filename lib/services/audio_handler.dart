@@ -66,9 +66,8 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   /// Never send web CORS headers (Origin/Referer/Sec-Fetch-*) on Android streams,
   /// nor hardcoded Range headers (Range: bytes=0-) which conflict with ExoPlayer's internal chunker.
   static const Map<String, String> _youtubeHeaders = {
-    'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+    'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 11)',
     'Accept': '*/*',
-    'Accept-Encoding': 'identity',
   };
 
   static const Map<String, String> _proxyHeaders = {
@@ -381,7 +380,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             headers: isYouTubeStream ? _youtubeHeaders : null,
             initialPosition: resumePos,
             preload: true,
-          ).timeout(const Duration(seconds: 4));
+          ).timeout(const Duration(seconds: 12));
 
           await _player.play();
           reconnected = true;
@@ -542,7 +541,6 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
 
-        // Attempt 1: Standard YouTube streaming headers
         try {
           LogService.stream('AudioHandler', 'Connecting to candidate #${i + 1} with Android ExoPlayer headers...');
           await _player.setUrl(
@@ -550,7 +548,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             headers: isYouTubeStream ? _youtubeHeaders : null,
             initialPosition: Duration.zero,
             preload: true,
-          ).timeout(const Duration(seconds: 4));
+          ).timeout(const Duration(seconds: 12));
           if (currentRequestId != _playRequestId) {
             try { await _player.stop(); } catch (_) {}
             return;
@@ -562,34 +560,50 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           break;
         } catch (e) {
           try { await _player.stop(); } catch (_) {}
-          LogService.w('AudioHandler', 'Candidate #${i + 1} with headers failed: $e. Retrying raw...');
+          LogService.w('AudioHandler', 'Candidate #${i + 1} connection failed: $e');
           if (e.toString().contains('403') || e.toString().contains('InvalidResponseCodeException: 403')) {
-            LogService.w('AudioHandler', 'HTTP 403 detected on direct stream. Bypassing directly to Proxy Fallback Engine...');
+            LogService.w('AudioHandler', 'HTTP 403 detected on direct stream. Skipping to proxy engine...');
             break;
           }
         }
+      }
 
-        // Attempt 2: Standard setUrl without headers (quick 3s fallback)
-        if (currentRequestId == _playRequestId) {
-          try {
-            await _player.setUrl(
-              url,
-              initialPosition: Duration.zero,
-              preload: true,
-            ).timeout(const Duration(seconds: 3));
-            if (currentRequestId != _playRequestId) {
+      // Tier 1.5: If cached candidates failed/timed out, invalidate cache and perform one fresh direct resolution
+      if (!started && currentRequestId == _playRequestId) {
+        StreamResolverService.invalidateCache(song.id);
+        YouTubeImporterService.invalidateCache(song.id);
+        try {
+          LogService.stream('AudioHandler', 'Pre-resolved streams exhausted. Attempting fresh direct resolution for "${song.title}"...');
+          final freshCandidates = await StreamResolverService.resolvePlayableStreamCandidates(song);
+          for (int i = 0; i < freshCandidates.length; i++) {
+            if (currentRequestId != _playRequestId) return;
+            final url = freshCandidates[i];
+            if (url.isEmpty || candidates.contains(url)) continue;
+            final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
+            try {
+              LogService.stream('AudioHandler', 'Connecting to fresh candidate #${i + 1}...');
+              await _player.setUrl(
+                url,
+                headers: isYouTubeStream ? _youtubeHeaders : null,
+                initialPosition: Duration.zero,
+                preload: true,
+              ).timeout(const Duration(seconds: 12));
+              if (currentRequestId != _playRequestId) {
+                try { await _player.stop(); } catch (_) {}
+                return;
+              }
+              await _player.play();
+              started = true;
+              LogService.instance.recordPlaybackSuccess(song);
+              debugPrint('Successfully playing "${song.title}" via fresh candidate #${i + 1}');
+              break;
+            } catch (e) {
               try { await _player.stop(); } catch (_) {}
-              return;
+              LogService.w('AudioHandler', 'Fresh candidate #${i + 1} failed: $e');
             }
-            await _player.play();
-            started = true;
-            LogService.instance.recordPlaybackSuccess(song);
-            debugPrint('Successfully playing "${song.title}" via candidate #${i + 1} raw stream');
-            break;
-          } catch (e) {
-            try { await _player.stop(); } catch (_) {}
-            LogService.w('AudioHandler', 'Candidate #${i + 1} raw stream failed: $e. Moving to next candidate...');
           }
+        } catch (e) {
+          debugPrint('[AudioHandler] Fresh resolution error: $e');
         }
       }
 
@@ -608,7 +622,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
                 headers: _proxyHeaders,
                 initialPosition: Duration.zero,
                 preload: true,
-              ).timeout(const Duration(seconds: 8));
+              ).timeout(const Duration(seconds: 12));
               if (currentRequestId != _playRequestId) {
                 try { await _player.stop(); } catch (_) {}
                 return;

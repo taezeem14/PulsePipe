@@ -15,12 +15,10 @@ class PipedService {
 
   static const _instances = [
     'https://pipedapi.adminforge.de',
-    'https://pipedapi.ducks.party',
-    'https://pipedapi.drgns.space',
     'https://pipedapi.smnz.de',
     'https://piped-api.lunar.icu',
     'https://pipedapi.leptons.xyz',
-    'https://api.piped.privacydev.net',
+    'https://pipedapi.ducks.party',
   ];
 
   static final Map<String, DateTime> _cooldowns = {};
@@ -138,40 +136,25 @@ class PipedService {
       }
     }
 
-    // Secondary fallback: Invidious API endpoint
-    try {
-      LogService.stream('PipedService', 'Attempting Invidious API fallback for "$videoId"...');
-      final invUrl = Uri.parse('https://invidious.f5.si/api/v1/videos/$videoId');
-      final resp = await http.get(invUrl, headers: {
-        'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
-      }).timeout(const Duration(seconds: 4));
-      if (resp.statusCode == 200) {
-        final decoded = jsonDecode(resp.body);
-        if (decoded is Map) {
-          final adaptiveFormats = decoded['adaptiveFormats'] as List? ?? [];
-          final audioList = adaptiveFormats.where((f) => (f['type'] as String? ?? '').contains('audio')).toList();
-          if (audioList.isNotEmpty) {
-            final best = audioList.first;
-            String streamUrl = best['url'] as String? ?? '';
-            if (streamUrl.isNotEmpty) {
-              if (streamUrl.contains('googlevideo.com')) {
-                final parsed = Uri.parse(streamUrl);
-                streamUrl = Uri(
-                  scheme: invUrl.scheme,
-                  host: invUrl.host,
-                  port: invUrl.hasPort ? invUrl.port : null,
-                  path: parsed.path,
-                  query: parsed.query,
-                ).toString();
-              }
-              LogService.stream('PipedService', 'Resolved audio via Invidious API fallback for "$videoId"');
-              return streamUrl;
-            }
-          }
+    // Secondary fallback: Invidious audio proxy endpoint
+    final invidiousHosts = [
+      'https://invidious.projectsegfau.lt',
+      'https://invidious.perennialte.ch',
+    ];
+
+    for (final host in invidiousHosts) {
+      try {
+        final streamUrl = '$host/latest_version?id=$videoId&itag=140';
+        final check = await http.head(Uri.parse(streamUrl), headers: {
+          'User-Agent': 'Sine/1.0 (Android ExoPlayer)',
+        }).timeout(const Duration(seconds: 4));
+        if (check.statusCode == 200 || check.statusCode == 302) {
+          LogService.stream('PipedService', 'Resolved audio via Invidious proxy fallback for "$videoId"');
+          return streamUrl;
         }
+      } catch (e) {
+        LogService.w('PipedService', 'Invidious instance $host failed for "$videoId": $e');
       }
-    } catch (e) {
-      LogService.w('PipedService', 'Invidious fallback failed for "$videoId": $e');
     }
 
     LogService.w('PipedService', 'All fallback instances failed for "$videoId"');
