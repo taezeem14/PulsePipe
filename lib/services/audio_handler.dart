@@ -17,7 +17,7 @@ Future<AudioHandler> initAudioHandler() async {
       builder: () => EmberAudioHandler(),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.taezeem.pulsepipe.channel.audio',
-        androidNotificationChannelName: 'PulsePipe Playback',
+        androidNotificationChannelName: 'Sine Playback',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
         androidNotificationIcon: 'mipmap/ic_launcher',
