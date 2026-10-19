@@ -1,5 +1,5 @@
 name: spotify_newpipe
-description: "PulsePipe: High-fidelity music streaming client powered purely by YouTube via NewPipe architecture for Android."
+description: "Sine: High-fidelity music streaming client powered purely by YouTube via NewPipe architecture for Android."
 publish_to: 'none'
 
 version: 1.0.1+2

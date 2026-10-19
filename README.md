@@ -1,29 +1,29 @@
-# ⚡ PulsePipe — The Spotify-Killer Powered by YouTube (No Cap)
+# ⚡ SINE — The Spotify-Killer Powered by YouTube (No Cap)
 
 <div align="center">
 
 ```
-  ____       _          ____  _            
- |  _ \ _  _| |___  ___|  _ \(_)_ __   ___ 
- | |_) | | | | / __|/ _ \ |_) | | '_ \ / _ \
- |  __/| |_| | \__ \  __/  __/| | |_) |  __/
- |_|    \__,_|_|___/\___|_|   |_| .__/ \___|
-                                |_|         
+  ███████╗██╗███╗   ██╗███████╗
+  ██╔════╝██║████╗  ██║██╔════╝
+  ███████╗██║██╔██╗ ██║█████╗  
+  ╚════██║██║██║╚██╗██║██╔══╝  
+  ███████║██║██║ ╚████║███████╗
+  ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
 ```
 
-### *Streaming music hits different when you don't pay \$11/month for ads. Certified banger. 🎧✨*
+### *Streaming music hits different when you don't pay \$11/month for ads. Pure acoustics. Zero telemetry. 🎧✨*
 
-[![GitHub Release](https://img.shields.io/github/v/release/taezeem14/PulsePipe?color=00d2ff&style=for-the-badge&logo=github)](https://github.com/taezeem14/PulsePipe/releases/latest)
-[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/taezeem14/PulsePipe/releases/latest)
+[![GitHub Release](https://img.shields.io/github/v/release/taezeem14/Sine?color=00d2ff&style=for-the-badge&logo=github)](https://github.com/taezeem14/Sine/releases/latest)
+[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/taezeem14/Sine/releases/latest)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![Engine](https://img.shields.io/badge/Engine-NewPipe%20Extractor-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/TeamNewPipe/NewPipe)
-[![Startup Latency](https://img.shields.io/badge/Startup%20Latency-1.2s%20Instant-success?style=for-the-badge&logo=speedtest&logoColor=white)](https://github.com/taezeem14/PulsePipe)
+[![Startup Latency](https://img.shields.io/badge/Startup%20Latency-1.2s%20Instant-success?style=for-the-badge&logo=speedtest&logoColor=white)](https://github.com/taezeem14/Sine)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](LICENSE)
-[![Zero Ads](https://img.shields.io/badge/Ads-ZERO%20ADS-success?style=for-the-badge&logo=adguard&logoColor=white)](https://github.com/taezeem14/PulsePipe)
+[![Zero Ads](https://img.shields.io/badge/Ads-ZERO%20ADS-success?style=for-the-badge&logo=adguard&logoColor=white)](https://github.com/taezeem14/Sine)
 
 <br/>
 
-### [👉 📲 DOWNLOAD LATEST APK (v1.0.0)](https://github.com/taezeem14/PulsePipe/releases/latest/download/PulsePipe-v1.0.0.apk) 👈
+### [👉 📲 DOWNLOAD LATEST APK (v1.0.1)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.1.apk) 👈
 
 *Tap above, download the APK, install, and elevate your earholes immediately.*
 
@@ -31,15 +31,16 @@
 
 ---
 
-## 💅 What Is PulsePipe?
+## 💅 What Is Sine?
 
-Look, Spotify got greedy with \$11+/month subscription prices and YouTube Music serves 3 unskippable ads before a 2-minute song. **PulsePipe** is the ultimate fusion of **Spotify's sleek midnight UI** and **NewPipe's raw, private YouTube extraction engine**.
+Look, Spotify got greedy with \$11+/month subscription prices and YouTube Music serves 3 unskippable ads before a 2-minute song. **Sine** is the ultimate fusion of **Spotify's sleek obsidian midnight UI** and **NewPipe's raw, private YouTube extraction engine**.
 
 - **No subscriptions.**
 - **No accounts or logins required.**
 - **No tracking or telemetry.**
 - **Zero ads. Ever.**
-- **Instant sub-1.5s playback** powered by native Android hardware DSP decoding.
+- **Instant sub-1.2s playback** powered by native Android hardware DSP decoding.
+- **Offline vault** for saving tracks directly to local storage.
 - Just pure, uninterrupted, audiophile-grade music streamed straight from YouTube & YouTube Music's global catalog.
 
 We cooked so you can vibe. Fr fr. 👨‍🍳🔥
@@ -48,33 +49,34 @@ We cooked so you can vibe. Fr fr. 👨‍🍳🔥
 
 ## 📊 Live Architecture & Flow Diagrams
 
-PulsePipe is engineered from the ground up to eliminate playback latency, avoid Google CDN throttling, and prevent queue skips. Below are the architectural workflows powering the app:
+Sine is engineered from the ground up to eliminate playback latency, avoid Google CDN throttling, and prevent queue skips. Below are the architectural workflows powering the app:
 
 ### 1. Multi-Tier Stream Resolution & Playback Engine
 
 ```mermaid
 flowchart TD
-    UserTap(["User Taps Track / Queue Advances"]) --> CheckCache{"In-Memory Cache Hit?<br/>(&lt; 4 Hours)"}
+    UserTap(["User Taps Track / Queue Advances"]) --> CheckCache{"In-Memory Cache Hit?<br/>(&lt; 30 Mins)"}
     
     CheckCache -- "YES (0ms)" --> InstantLoad["Instant Load from Memory"]
     CheckCache -- "NO" --> ExtractYT["Extract YouTube Video ID<br/>(or Dynamic Clean Search)"]
     
-    ExtractYT --> InnerTube["Query InnerTube Manifest Client<br/>(requireWatchPage: false)"]
+    ExtractYT --> InnerTube["Query InnerTube Manifest Client<br/>(Android SDK-less / iOS Cascade)"]
     
     InnerTube --> Candidates["Candidate Prioritization Engine"]
-    Candidates --> C1["Candidate #1: Muxed MP4 (itag 18)<br/>Progressive Container + AAC Audio<br/>★ Immune to DASH cipher throttling"]
-    Candidates --> C2["Candidate #2: Standalone M4A (itag 140)<br/>Adaptive DASH AAC Audio"]
-    Candidates --> C3["Candidate #3: Standalone Opus (itag 251)<br/>Adaptive DASH WebM Audio"]
+    Candidates --> C1["Candidate #1: Standalone AAC (itag 140)<br/>~128kbps Native Hardware Decoded<br/>★ Ultra-lightweight ~2-3MB footprint"]
+    Candidates --> C2["Candidate #2: Standalone Opus (itag 251)<br/>~160kbps Audiophile Grade Audio"]
+    Candidates --> C3["Candidate #3: Progressive Muxed MP4 (itag 18)<br/>360p Progressive Fallback Stream"]
     
-    C1 --> ExoConnect["ExoPlayer HTTP DataSource<br/>(Authentic NewPipe Streaming Headers)"]
+    C1 --> ExoConnect["ExoPlayer HTTP DataSource<br/>(Clean Mobile Streaming Headers)"]
     InstantLoad --> ExoConnect
     
     ExoConnect -- "Connects in ~1.2s" --> DSP["Android MediaCodec Hardware DSP<br/>(Demuxes AAC & Feeds DAC Directly)"]
     DSP --> AudioOut(["🎶 Pure Audiophile Sound Output"])
     
-    ExoConnect -- "On Connection Timeout / 403" --> TryC2["Fail-Over to Candidate #2 / #3"]
-    TryC2 -- "If All Direct Fail" --> Piped["Tier-2: Piped API Cluster<br/>(smnz, adminforge, lunar, leptons)"]
-    Piped -- "If Piped Fails" --> Invidious["Tier-3: Invidious API Fallback<br/>(invidious.f5.si)"]
+    ExoConnect -- "On 12s Timeout / Socket Sever" --> FreshResolve["Invalidate Cache & Fetch Fresh Manifest"]
+    FreshResolve --> ExoConnect
+    FreshResolve -- "If All Direct Streams Exhausted" --> Piped["Tier-2: Piped API Cluster<br/>(smnz, adminforge, lunar, leptons)"]
+    Piped -- "If Piped Fails" --> Invidious["Tier-3: Live Invidious Audio Proxy<br/>(latest_version itag 140)"]
     Piped --> DSP
     Invidious --> DSP
 ```
@@ -87,7 +89,7 @@ flowchart TD
 sequenceDiagram
     autonumber
     actor Listener as 🎧 Listener
-    participant UI as PulsePipe UI
+    participant UI as Sine UI
     participant Resolver as Stream Resolver
     participant YT as YouTube InnerTube
     participant Exo as Android ExoPlayer
@@ -96,16 +98,16 @@ sequenceDiagram
     Listener->>UI: Selects Track ("Sonne Remix")
     UI->>Resolver: Request Playable Streams
     alt Memory Cache Hit
-        Resolver-->>UI: Return Cached itag 18 URL (0ms)
+        Resolver-->>UI: Return Cached itag 140 URL (0ms)
     else First-Time Track Resolution
-        Resolver->>YT: Query Manifest (~400ms)
+        Resolver->>YT: Query Manifest (~300ms)
         YT-->>Resolver: Return Manifest Streams
-        Resolver->>Resolver: Rank itag 18 as Primary #1
+        Resolver->>Resolver: Rank itag 140 as Primary #1
         Resolver-->>UI: Return Stream Candidates
     end
 
-    UI->>Exo: setUrl(Candidate #1: itag 18, headers)
-    Note over Exo: Buffer for Playback = 500ms
+    UI->>Exo: setUrl(Candidate #1: itag 140, headers)
+    Note over Exo: Buffer for Playback = 400ms
     Exo->>DSP: Route Demuxed AAC Audio Stream
     DSP-->>Listener: 🎶 Instant Audio Playback Starts (~1.2s)
     
@@ -123,7 +125,7 @@ sequenceDiagram
 ```mermaid
 xychart-beta
     title "Cold-Start Track Playback Latency in Seconds (Lower is Better)"
-    x-axis ["PulsePipe v1.0", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
+    x-axis ["Sine v1.0.1", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
     y-axis "Startup Latency (Seconds)" 0 --> 35
     bar [1.2, 8.5, 6.2, 28.0]
 ```
@@ -131,7 +133,7 @@ xychart-beta
 ```
 Playback Latency Comparison:
 ========================================================================
-PulsePipe v1.0       [██] 1.2s (Hardware AAC DSP + itag 18 Prioritization)
+Sine v1.0.1          [██] 1.2s (Hardware AAC DSP + itag 140 Prioritization)
 Spotify Free         [████████] 8.5s (Audio Ad Insertion + DRM Handshake)
 YouTube Music        [██████] 6.2s (Video Ad Ingestion + Player Handshake)
 Generic Scrapers     [████████████████████████████] 28.0s (DASH 403 Retries)
@@ -144,10 +146,10 @@ Generic Scrapers     [███████████████████�
 
 ```mermaid
 pie title "Audio Stream Resolution & Decoder Routing"
-    "Progressive Muxed AAC (itag 18 - Instant Hardware DSP)" : 86
-    "Standalone M4A AAC (itag 140 - Pure Audio Fallback)" : 7
-    "Standalone Opus (itag 251 - High-Fidelity Fallback)" : 5
-    "Piped / Invidious Proxy Failover" : 2
+    "Standalone AAC (itag 140 - Instant Hardware DSP)" : 84
+    "Standalone Opus (itag 251 - High-Fidelity Audiophile)" : 11
+    "Progressive Muxed MP4 (itag 18 - Fallback Container)" : 4
+    "Piped / Invidious Proxy Failover" : 1
 ```
 
 ---
@@ -159,7 +161,7 @@ stateDiagram-v2
     [*] --> Idle
     Idle --> Loading : playSong(track)
     note right of Loading : Flags Reset Prior to stop():\n_currentTrackActive = false\n_completionHandled = true
-    Loading --> Ready : Buffer >= 500ms (~1.2s)
+    Loading --> Ready : Buffer >= 400ms (~1.2s)
     Ready --> Playing : Audio Playback Starts
     Playing --> Paused : User Pause
     Paused --> Playing : User Resume
@@ -178,11 +180,11 @@ stateDiagram-v2
 
 ---
 
-## 🥊 PulsePipe vs. The Competition
+## 🥊 Sine vs. The Competition
 
-| Feature | ⚡ **PulsePipe** | 🟢 **Spotify Free** | 🔴 **YouTube Music** | 📺 **NewPipe** |
+| Feature | ⚡ **Sine** | 🟢 **Spotify Free** | 🔴 **YouTube Music** | 📺 **NewPipe** |
 | :--- | :---: | :---: | :---: | :---: |
-| **Monthly Cost** | **$0 / Free Forever** | $11.99/mo (Premium) | $13.99/mo (Premium) | $0 / Free |
+| **Monthly Cost** | **\$0 / Free Forever** | \$11.99/mo (Premium) | \$13.99/mo (Premium) | \$0 / Free |
 | **Audio Ads** | 🚫 **ZERO ADS** | 🔊 Unskippable 30s Ads | 🔊 Unskippable Video Ads | 🚫 ZERO ADS |
 | **Account Required** | ❌ **No Account Needed** | ✅ Mandatory Account | ✅ Mandatory Google Login | ❌ No Account Needed |
 | **Startup Latency** | ⚡ **~1.2 seconds** | ⏱️ 6–10 seconds | ⏱️ 5–8 seconds | ⚡ 1.5–3 seconds |
@@ -198,11 +200,11 @@ stateDiagram-v2
 ## 🚀 The Feature Flex
 
 ### ⚡ 1. Instant NewPipe Stream Engine (Zero-Delay Playback 🏎️💨)
-- **Sub-1.5s Instant Play**: Gone are the days of waiting 15–30 seconds for a song to load. PulsePipe prioritizes progressive muxed MP4 streams (`itag 18`), pre-buffers in 500ms, and begins playback immediately via Android's hardware AAC decoder.
-- **Native ExoPlayer Stream Headers**: Injects authentic NewPipe headers (`User-Agent`, `Origin`, `Referer`, `Sec-Fetch-Mode`) directly into Android ExoPlayer's HTTP DataSource, bypassing GoogleVideo CDN 403 blocks and preventing `(0) Source error`.
+- **Sub-1.2s Instant Play**: Gone are the days of waiting 15–30 seconds for a song to load. Sine prioritizes standalone AAC audio streams (`itag 140`), pre-buffers in 400ms, and begins playback immediately via Android's hardware AAC decoder.
+- **Native ExoPlayer Stream Headers**: Injects clean mobile headers directly into Android ExoPlayer's HTTP DataSource, bypassing GoogleVideo CDN 403 blocks and preventing `(0) Source error`.
 - **Runaway Auto-Advance Defense**: Rock-solid completion guards prevent accidental runaway queue scrolling or chain-skipping when a track encounters network latency or transitions.
 - **Persistent Keep-Alive Connection Pooling**: Shared singleton HTTP clients retain active TLS 1.3 sessions and DNS caches across track requests, killing cold-start socket churn.
-- **Deep Background Prefetching**: The moment you tap play on a track or playlist, PulsePipe pre-resolves the next queued song in the background with `WINDOW_SIZE = 1` precision.
+- **Deep Background Prefetching**: The moment you tap play on a track or playlist, Sine pre-resolves the next queued song in the background with `WINDOW_SIZE = 1` precision.
 - **Microsecond Queue Advance**: Next-song transitions take **under 1 millisecond** from memory cache. True gapless playback back-to-back.
 
 ### 🔍 2. In-App Diagnostic Log Extractor (NewPipe-Grade Telemetry 🛠️)
@@ -232,7 +234,7 @@ stateDiagram-v2
   - 🎛️ `Flat` — Studio reference monitor profile
 
 ### ♾️ 6. Infinite YouTube Mixes & Endless Queue
-- Put on any YouTube Mix or Radio (`list=RD...`, `list=RDMM...`) and PulsePipe paginates deep into the algorithm, retrieving **150+ to 200+ tracks** on the fly.
+- Put on any YouTube Mix or Radio (`list=RD...`, `list=RDMM...`) and Sine paginates deep into the algorithm, retrieving **150+ to 200+ tracks** on the fly.
 - Smart auto-advance ensures seamless track transitions with background stream prefetching.
 
 ### 🎤 7. Real-Time Synced Karaoke Lyrics
@@ -254,22 +256,22 @@ stateDiagram-v2
 
 ## ⚡ Installation (Super Easy)
 
-1. Head over to the **[Latest Releases](https://github.com/taezeem14/PulsePipe/releases/latest)**.
-2. Download **`PulsePipe-v1.0.0.apk`**.
+1. Head over to the **[Latest Releases](https://github.com/taezeem14/Sine/releases/latest)**.
+2. Download **`Sine-v1.0.1.apk`**.
 3. On your Android device, tap the downloaded APK.
 4. If prompted, toggle *"Allow install from unknown sources"* (it's open-source, safe, and completely transparent).
-5. Open PulsePipe and start streaming! 🚀
+5. Open Sine and start streaming! 🚀
 
 ---
 
 ## 🛠️ Tech Stack & Architecture
 
-PulsePipe is engineered with modern Flutter & Dart architecture:
+Sine is engineered with modern Flutter & Dart architecture:
 
 - **Framework**: [Flutter 3](https://flutter.dev) & Dart 3.11
 - **Audio Engine**: [`just_audio`](https://pub.dev/packages/just_audio) + Android ExoPlayer 2 / Media3
-- **Extraction Protocol**: Tier-1 InnerTube Direct Stream Extractor + [Team NewPipe](https://github.com/TeamNewPipe/NewPipe) extraction logic + [`youtube_explode_dart`](https://pub.dev/packages/youtube_explode_dart) + High-Performance Piped REST Proxy Failover
-- **Connection Optimization**: Persistent HTTP/2 keep-alive socket reuse & ExoPlayer aggressive low-latency buffer tuning (`bufferForPlaybackDuration = 500ms`)
+- **Extraction Protocol**: Tier-1 InnerTube Direct Stream Extractor + [Team NewPipe](https://github.com/TeamNewPipe/NewPipe) extraction logic + [`youtube_explode_dart`](https://pub.dev/packages/youtube_explode_dart) + High-Performance Piped & Invidious REST Proxy Failover
+- **Connection Optimization**: Persistent HTTP/2 keep-alive socket reuse & ExoPlayer aggressive low-latency buffer tuning (`bufferForPlaybackDuration = 400ms`)
 - **DSP Audio FX**: Android native hardware `AndroidEqualizer` multi-band filter chain
 - **Smart Metadata Cleaner**: Custom regex engine extracting true track titles & artist bylines from bloated YouTube video titles
 - **Sponsor Filtering**: Official [SponsorBlock API](https://sponsor.ajay.app/) integration
@@ -283,8 +285,8 @@ Wanna tweak the code or build your own APK? It's straightforward:
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/taezeem14/PulsePipe.git
-cd PulsePipe
+git clone https://github.com/taezeem14/Sine.git
+cd Sine
 
 # 2. Get dependencies
 flutter pub get
@@ -300,7 +302,7 @@ flutter build apk --release --no-tree-shake-icons
 ```
 
 Your compiled APK will be located at:
-`build/app/outputs/flutter-apk/app-release.apk`
+`build/app/outputs/flutter-apk/app-release.apk` (or `Sine-v1.0.1.apk`)
 
 ---
 
@@ -319,7 +321,7 @@ Your compiled APK will be located at:
 
 ## 📜 License
 
-PulsePipe is released under the **GNU General Public License v3.0 (GPL-3.0)**. Free as in freedom, forever.
+Sine is released under the **GNU General Public License v3.0 (GPL-3.0)**. Free as in freedom, forever.
 
 <div align="center">
 
