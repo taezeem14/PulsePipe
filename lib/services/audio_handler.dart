@@ -478,7 +478,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     mediaItem.add(
       MediaItem(
         id: song.id,
-        album: 'PulsePipe',
+        album: 'Sine',
         title: song.title,
         artist: song.artist,
         duration: song.duration,
