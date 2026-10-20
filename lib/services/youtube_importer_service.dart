@@ -215,24 +215,23 @@ class YouTubeImporterService {
 
         final candidates = <String>[];
 
-        // 1. Primary: MP4 / M4A AAC (itag 140, ~128kbps) standalone audio stream
-        // Ultra-lightweight payload (~2-3MB total), instant hardware decoding on all Android chips, buffers in <400ms
+        // 1. Primary (Fastest): Progressive Muxed MP4 (itag 18, 360p progressive container with AAC audio)
+        // Instant hardware decoding on Android ExoPlayer, immune to DASH cipher throttling, starts in ~0.5s - 1.2s
+        final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+        if (muxedMp4.isNotEmpty) {
+          candidates.add(muxedMp4.withHighestBitrate().url.toString());
+        }
+
+        // 2. Secondary Fallback: Standalone MP4 / M4A AAC (itag 140, ~128kbps) audio stream
         final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
         if (mp4Audio.isNotEmpty) {
           candidates.add(mp4Audio.withHighestBitrate().url.toString());
         }
 
-        // 2. Secondary: WebM Opus (itag 251, ~160kbps) high-fidelity standalone audio
+        // 3. Tertiary Fallback: Standalone WebM Opus (itag 251, ~160kbps) audiophile audio stream
         final webmAudio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'webm').toList();
         if (webmAudio.isNotEmpty) {
           candidates.add(webmAudio.withHighestBitrate().url.toString());
-        }
-
-        // 3. Fallback: Muxed MP4 (itag 18, 360p progressive container with AAC audio)
-        // Used as fallback if standalone DASH audio tracks are throttled
-        final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
-        if (muxedMp4.isNotEmpty) {
-          candidates.add(muxedMp4.withHighestBitrate().url.toString());
         }
 
         if (candidates.isNotEmpty) {

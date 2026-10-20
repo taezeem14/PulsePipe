@@ -71,7 +71,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   };
 
   static const Map<String, String> _proxyHeaders = {
-    'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
+    'User-Agent': 'Sine/1.0 (Android ExoPlayer)',
     'Accept': '*/*',
   };
 
