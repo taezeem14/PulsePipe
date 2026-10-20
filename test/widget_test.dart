@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:spotify_newpipe/models/song.dart';
 import 'package:spotify_newpipe/models/playlist.dart';
+import 'package:spotify_newpipe/providers/player_provider.dart';
+import 'package:spotify_newpipe/services/lyrics_service.dart';
 import 'package:spotify_newpipe/services/sponsorblock_service.dart';
 import 'package:spotify_newpipe/services/youtube_importer_service.dart';
 import 'package:http/http.dart' as http;
@@ -155,6 +157,42 @@ void main() {
         // Fallback for offline testing environments without live internet access
         expect(e, isNotNull);
       }
+    });
+    test('LyricsService accurately parses third-party re-upload titles and sanitizes channels', () {
+      // 1. Third-party upload with "Artist - Track (Lyrics)" by curator channel
+      final cand1 = LyricsService.generateCandidates(
+        'The Weeknd - Blinding Lights (Official Lyric Video)',
+        'VibeZone24',
+      );
+      expect(cand1, isNotEmpty);
+      expect(cand1.first.artist, 'The Weeknd');
+      expect(cand1.first.title, 'Blinding Lights');
+
+      // 2. Upload with bracketed noise [Official Audio]
+      final cand2 = LyricsService.generateCandidates(
+        'Eminem - Mockingbird [Official Audio]',
+        'HipHopDaily',
+      );
+      expect(cand2.first.artist, 'Eminem');
+      expect(cand2.first.title, 'Mockingbird');
+
+      // 3. YouTube auto-generated channel with "- Topic"
+      final cleanArt = LyricsService.cleanArtist('Chris Grey - Topic');
+      expect(cleanArt, 'Chris Grey');
+
+      // 4. VEVO suffix channel
+      final cleanVevo = LyricsService.cleanArtist('TaylorSwiftVEVO');
+      expect(cleanVevo, 'TaylorSwift');
+
+      // 5. Title with leading track number and noise tags
+      final cleanT = LyricsService.cleanTitle('01. Billie Eilish - BIRDS OF A FEATHER (Slowed + Reverb)');
+      expect(cleanT, 'Billie Eilish - BIRDS OF A FEATHER');
+    });
+
+    test('IsolationMode enum supports Vocals Only and Instruments Only states', () {
+      expect(IsolationMode.values, contains(IsolationMode.none));
+      expect(IsolationMode.values, contains(IsolationMode.vocalsOnly));
+      expect(IsolationMode.values, contains(IsolationMode.instrumentsOnly));
     });
   });
 }

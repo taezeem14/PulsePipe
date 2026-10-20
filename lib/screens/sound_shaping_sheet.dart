@@ -109,6 +109,42 @@ class SoundShapingSheet extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
+              // Stem Isolation (Vocals Only vs Instruments Only)
+              const Text(
+                'ISOLATION & KARAOKE (DSP FILTER)',
+                style: TextStyle(
+                  color: EmberColors.textMuted,
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _IsolationCard(
+                      title: 'Vocals Only',
+                      subtitle: 'Isolate voice (acapella)',
+                      icon: Icons.mic_rounded,
+                      isActive: player.isolationMode == IsolationMode.vocalsOnly,
+                      onTap: () => player.toggleIsolationMode(IsolationMode.vocalsOnly),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _IsolationCard(
+                      title: 'Instruments Only',
+                      subtitle: 'Remove voice (karaoke)',
+                      icon: Icons.music_note_rounded,
+                      isActive: player.isolationMode == IsolationMode.instrumentsOnly,
+                      onTap: () => player.toggleIsolationMode(IsolationMode.instrumentsOnly),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+
               // Presets
               const Text('ACOUSTIC PROFILES', style: TextStyle(color: EmberColors.textMuted, fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
@@ -285,6 +321,112 @@ class _BandSliderState extends State<_BandSlider> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _IsolationCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _IsolationCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isActive
+                ? EmberColors.primaryAmber.withValues(alpha: 0.14)
+                : EmberColors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isActive
+                  ? EmberColors.primaryAmber
+                  : EmberColors.outlineVariant.withValues(alpha: 0.6),
+              width: isActive ? 1.5 : 1.0,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? EmberColors.primaryAmber.withValues(alpha: 0.25)
+                          : EmberColors.surfaceContainerHigh,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 15,
+                      color: isActive ? EmberColors.primaryAmber : EmberColors.textSecondary,
+                    ),
+                  ),
+                  if (isActive)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: EmberColors.primaryAmber,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'ACTIVE',
+                        style: TextStyle(
+                          color: EmberColors.obsidianBase,
+                          fontSize: 9.0,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                style: TextStyle(
+                  color: isActive ? EmberColors.primaryAmber : EmberColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: isActive ? EmberColors.primaryAmberHi.withValues(alpha: 0.8) : EmberColors.textMuted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -799,6 +799,12 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             }
           }
           break;
+        case 'Vocals Only':
+          await applyIsolationFilter(vocalsOnly: true);
+          return;
+        case 'Instruments Only':
+          await applyIsolationFilter(vocalsOnly: false);
+          return;
         case 'Flat':
         default:
           for (int i = 0; i < n; i++) {
@@ -814,6 +820,89 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
     } catch (e) {
       debugPrint('Apply preset error: $e');
+    }
+  }
+
+  /// Hardware DSP Isolation Filter (Acapella / Vocals Only vs Karaoke / Instruments Only)
+  Future<void> applyIsolationFilter({required bool vocalsOnly}) async {
+    _currentPreset = vocalsOnly ? 'Vocals Only' : 'Instruments Only';
+    try {
+      final params = await _equalizer.parameters;
+      final bands = params.bands;
+      final n = bands.length;
+      if (n == 0) return;
+
+      final minDb = params.minDecibels;
+      final maxDb = params.maxDecibels;
+      double clampGain(double g) => g.clamp(minDb, maxDb);
+
+      if (vocalsOnly) {
+        // Acapella / Vocals Only: suppress kick, 808s, and cymbals; sharply boost speech and vocal formants
+        for (int i = 0; i < n; i++) {
+          final freq = bands[i].centerFrequency;
+          double target;
+          if (freq > 0) {
+            if (freq < 300) {
+              target = -12.0; // Cut low end and percussion
+            } else if (freq < 600) {
+              target = 1.0;
+            } else if (freq >= 600 && freq <= 3600) {
+              target = 8.5; // Lead vocal articulation
+            } else if (freq > 3600 && freq <= 7000) {
+              target = 2.5; // Vocal air
+            } else {
+              target = -10.0; // Cut extreme cymbals and high synths
+            }
+          } else {
+            // Index-based fallback for 5-band equalizer
+            if (i == 0) {
+              target = -12.0;
+            } else if (i == 1) {
+              target = -2.0;
+            } else if (i == 2) {
+              target = 8.5;
+            } else if (i == 3) {
+              target = 3.5;
+            } else {
+              target = -10.0;
+            }
+          }
+          await bands[i].setGain(clampGain(target));
+        }
+      } else {
+        // Karaoke / Instruments Only: carve out vocal frequencies; boost bassline, drums, and melodic instruments
+        for (int i = 0; i < n; i++) {
+          final freq = bands[i].centerFrequency;
+          double target;
+          if (freq > 0) {
+            if (freq < 350) {
+              target = 5.5; // Heavy bassline and kick
+            } else if (freq >= 650 && freq <= 3500) {
+              target = -13.0; // Deep vocal notch cancellation
+            } else if (freq > 3500 && freq <= 8000) {
+              target = 4.0; // Guitars, brass, synthesizers
+            } else {
+              target = 5.0; // High-hats and acoustic sparkle
+            }
+          } else {
+            // Index-based fallback for 5-band equalizer
+            if (i == 0) {
+              target = 5.5;
+            } else if (i == 1) {
+              target = 2.0;
+            } else if (i == 2) {
+              target = -13.0;
+            } else if (i == 3) {
+              target = 3.5;
+            } else {
+              target = 5.0;
+            }
+          }
+          await bands[i].setGain(clampGain(target));
+        }
+      }
+    } catch (e) {
+      debugPrint('Apply isolation filter error: $e');
     }
   }
 

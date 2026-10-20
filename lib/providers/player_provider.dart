@@ -12,6 +12,12 @@ import '../services/storage_service.dart';
 import '../services/youtube_importer_service.dart';
 import '../services/stream_resolver_service.dart';
 
+enum IsolationMode {
+  none,
+  vocalsOnly,
+  instrumentsOnly,
+}
+
 class PlayerProvider extends ChangeNotifier {
   final EmberAudioHandler _audioHandler;
   final StorageService _storageService;
@@ -51,6 +57,7 @@ class PlayerProvider extends ChangeNotifier {
   bool _eqEnabled = false;
   double _bassBoost = 0.0;
   Map<int, double> _bandGains = {};
+  IsolationMode _isolationMode = IsolationMode.none;
 
   LyricsResult _lyrics = LyricsResult.empty;
   bool _isLoadingLyrics = false;
@@ -132,6 +139,7 @@ class PlayerProvider extends ChangeNotifier {
   bool get eqEnabled => _eqEnabled;
   double get bassBoost => _bassBoost;
   Map<int, double> get bandGains => _bandGains;
+  IsolationMode get isolationMode => _isolationMode;
   EmberAudioHandler get audioHandler => _audioHandler;
 
   LyricsResult get lyrics => _lyrics;
@@ -194,6 +202,11 @@ class PlayerProvider extends ChangeNotifier {
     _audioHandler.setEqualizerEnabled(_eqEnabled);
     _audioHandler.setBassBoost(_bassBoost);
     _audioHandler.applyEqualizerPreset(_eqPreset);
+    if (_eqPreset == 'Vocals Only') {
+      _isolationMode = IsolationMode.vocalsOnly;
+    } else if (_eqPreset == 'Instruments Only') {
+      _isolationMode = IsolationMode.instrumentsOnly;
+    }
     if (_eqPreset == 'Custom' && _bandGains.isNotEmpty) {
       for (final entry in _bandGains.entries) {
         _audioHandler.setBandGain(entry.key, entry.value);
@@ -476,6 +489,7 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> retryFetchLyrics() async {
     final cur = currentSong;
     if (cur != null) {
+      LyricsService.invalidateCache(cur.title, cur.artist);
       await _loadLyrics(cur);
     }
   }
@@ -997,8 +1011,39 @@ class PlayerProvider extends ChangeNotifier {
   // Equalizer
   Future<void> setEqualizerPreset(String preset) async {
     _eqPreset = preset;
+    if (preset != 'Vocals Only' && preset != 'Instruments Only') {
+      _isolationMode = IsolationMode.none;
+    }
     await _storageService.saveEqualizerPreset(preset);
     await _audioHandler.applyEqualizerPreset(preset);
+    notifyListeners();
+  }
+
+  Future<void> toggleIsolationMode(IsolationMode mode) async {
+    if (_isolationMode == mode) {
+      _isolationMode = IsolationMode.none;
+      await setEqualizerPreset('Flat');
+      return;
+    }
+
+    _isolationMode = mode;
+    _eqEnabled = true;
+    await _storageService.saveEqualizerEnabled(true);
+    await _audioHandler.setEqualizerEnabled(true);
+
+    final presetName = mode == IsolationMode.vocalsOnly ? 'Vocals Only' : 'Instruments Only';
+    _eqPreset = presetName;
+    await _storageService.saveEqualizerPreset(presetName);
+    await _audioHandler.applyIsolationFilter(vocalsOnly: mode == IsolationMode.vocalsOnly);
+
+    try {
+      final params = await _audioHandler.equalizer.parameters;
+      for (int i = 0; i < params.bands.length; i++) {
+        _bandGains[i] = params.bands[i].gain;
+      }
+      await _storageService.saveBandGains(_bandGains);
+    } catch (_) {}
+
     notifyListeners();
   }
 
@@ -1021,6 +1066,7 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> setBandGain(int index, double gain) async {
     _bandGains[index] = gain;
     _eqPreset = 'Custom';
+    _isolationMode = IsolationMode.none;
     await _storageService.saveBandGains(_bandGains);
     await _storageService.saveEqualizerPreset('Custom');
     await _audioHandler.setBandGain(index, gain);
@@ -1031,6 +1077,7 @@ class PlayerProvider extends ChangeNotifier {
     _eqEnabled = false;
     _bassBoost = 0.0;
     _eqPreset = 'Flat';
+    _isolationMode = IsolationMode.none;
     _bandGains.clear();
     await _storageService.saveEqualizerEnabled(false);
     await _storageService.saveBassBoost(0.0);
