@@ -19,7 +19,7 @@ enum IsolationMode {
 }
 
 class PlayerProvider extends ChangeNotifier {
-  final EmberAudioHandler _audioHandler;
+  final SineAudioHandler _audioHandler;
   final StorageService _storageService;
 
   List<Song> _queue = [];
@@ -33,15 +33,27 @@ class PlayerProvider extends ChangeNotifier {
   String _repeatMode = 'off'; // 'off', 'all', 'one'
   String _activeTab = 'queue'; // 'queue', 'playlists', 'favorites', 'downloads', 'history'
   String _activeCategory = 'trending';
+  String _playingFrom = 'Trending';
+
+  // Infinite YouTube Mix state (NewPipe-style continuation)
+  bool _isMixActive = false;
+  bool get isMixActive => _isMixActive;
+  String? _activeMixPlaylistId;
+  String? _mixContinuationToken;
+  String? _mixLastVideoId;
+  String? _mixLastParams;
+  bool _isLoadingMoreMixTracks = false;
+  final Set<String> _mixSeenVideoIds = {};
+
   String _searchQuery = '';
   List<Song> _searchResults = [];
   List<Song> _favorites = [];
   List<Song> _history = [];
   List<Playlist> _playlists = [];
   List<Song> _downloads = [];
-  List<Song> _recommendations = [];
+  final List<Song> _recommendations = [];
   List<Song> _categoryTracks = [];
-  bool _isAutoplayEnabled = true;
+  bool _isAutoplayEnabled = false;
 
   /// Counts consecutive stream resolution failures to break infinite skip loops
   int _consecutiveStreamFailures = 0;
@@ -71,7 +83,6 @@ class PlayerProvider extends ChangeNotifier {
   int _sleepSecondsRemaining = 0;
   Timer? _searchDebounce;
   bool _isSearching = false;
-  bool _isReplenishingQueue = false;
 
   StreamSubscription? _posSub;
   StreamSubscription? _durSub;
@@ -110,6 +121,11 @@ class PlayerProvider extends ChangeNotifier {
   String get activeTab => _activeTab;
   String get activeCategory => _activeCategory;
   String? get activeMood => _activeCategory;
+  String get playingFrom => _playingFrom;
+  void setPlayingFrom(String source) {
+    _playingFrom = source;
+    notifyListeners();
+  }
   String get searchQuery => _searchQuery;
   List<Song> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
@@ -140,7 +156,7 @@ class PlayerProvider extends ChangeNotifier {
   double get bassBoost => _bassBoost;
   Map<int, double> get bandGains => _bandGains;
   IsolationMode get isolationMode => _isolationMode;
-  EmberAudioHandler get audioHandler => _audioHandler;
+  SineAudioHandler get audioHandler => _audioHandler;
 
   LyricsResult get lyrics => _lyrics;
   List<LyricLine> get syncedLyrics => _lyrics.syncedLyrics;
@@ -202,6 +218,8 @@ class PlayerProvider extends ChangeNotifier {
     _audioHandler.setEqualizerEnabled(_eqEnabled);
     _audioHandler.setBassBoost(_bassBoost);
     _audioHandler.applyEqualizerPreset(_eqPreset);
+    _audioHandler.setSpeed(_speed);
+    _audioHandler.setPlayerRepeatMode(_repeatMode);
     if (_eqPreset == 'Vocals Only') {
       _isolationMode = IsolationMode.vocalsOnly;
     } else if (_eqPreset == 'Instruments Only') {
@@ -290,25 +308,36 @@ class PlayerProvider extends ChangeNotifier {
       _consecutiveStreamFailures = 0;
     }
 
+    // 1. Single track loop mode: seek to start and replay instantly
     if (_repeatMode == 'one') {
-      if (_currentIndex >= 0 && _currentIndex < _queue.length) {
-        await playSong(_queue[_currentIndex], isAutoAdvance: true);
-      } else {
-        await _audioHandler.seek(Duration.zero);
-        await _audioHandler.play();
-      }
+      await _audioHandler.seek(Duration.zero);
+      await _audioHandler.play();
       return;
     }
 
+    // 2. Advance to next track in active queue
     if (_currentIndex < _queue.length - 1) {
       _currentIndex++;
       notifyListeners();
       await playSong(_queue[_currentIndex], isAutoAdvance: true);
-      _replenishQueueIfNeeded();
+      if (_isMixActive) {
+        _fetchMoreMixTracksIfNeeded();
+      }
       return;
     }
 
-    // At the end of queue
+    // 3. YouTube Mix infinite continuation (NewPipe-style): fetch next batch before halting
+    if (_isMixActive && _activeMixPlaylistId != null) {
+      await _fetchMoreMixTracksIfNeeded();
+      if (_currentIndex < _queue.length - 1) {
+        _currentIndex++;
+        notifyListeners();
+        await playSong(_queue[_currentIndex], isAutoAdvance: true);
+        return;
+      }
+    }
+
+    // 4. Queue repeat all mode: loop back to beginning
     if (_repeatMode == 'all' && _queue.isNotEmpty) {
       _currentIndex = 0;
       notifyListeners();
@@ -316,29 +345,9 @@ class PlayerProvider extends ChangeNotifier {
       return;
     }
 
-    // Infinite Autoplay Radio: auto-load and append recommendations
-    if (_isAutoplayEnabled) {
-      if (_recommendations.isEmpty) {
-        final seedSong = currentSong ?? (_queue.isNotEmpty ? _queue.last : null);
-        if (seedSong != null) {
-          try {
-            _recommendations = await CatalogService.fetchRecommendations(seedSong, limit: 15);
-          } catch (_) {}
-        }
-      }
-      if (_recommendations.isNotEmpty) {
-        final nextSong = _recommendations.removeAt(0);
-        _queue.add(nextSong);
-        _currentIndex = _queue.length - 1;
-        notifyListeners();
-        await playSong(nextSong, isAutoAdvance: true);
-        _replenishQueueIfNeeded();
-        return;
-      }
-    }
-
-    // End of queue reached and no further tracks available: gracefully halt
+    // 5. End of explicit queue reached: stop cleanly (no automatic smart radio)
     _isPlaying = false;
+    _position = Duration.zero;
     _isLoadingStream = false;
     notifyListeners();
     await _audioHandler.pause();
@@ -348,40 +357,49 @@ class PlayerProvider extends ChangeNotifier {
     if (_currentIndex + 1 < _queue.length) {
       final nextTrack = _queue[_currentIndex + 1];
       StreamResolverService.preloadNextSong(nextTrack);
-    } else if (_isAutoplayEnabled && _recommendations.isNotEmpty) {
-      StreamResolverService.preloadNextSong(_recommendations.first);
     }
   }
 
-  Future<void> _replenishQueueIfNeeded() async {
-    if (!_isAutoplayEnabled || _isReplenishingQueue) return;
-    if (_queue.length - _currentIndex <= 3) {
-      _isReplenishingQueue = true;
+  /// NewPipe-style infinite mix expansion: loads the next batch whenever nearing the queue tail
+  Future<void> _fetchMoreMixTracksIfNeeded() async {
+    if (!_isMixActive || _isLoadingMoreMixTracks || _activeMixPlaylistId == null) return;
+    if (_queue.length - _currentIndex <= 4) {
+      _isLoadingMoreMixTracks = true;
       try {
-        final seedSong = currentSong ?? (_queue.isNotEmpty ? _queue.last : null);
-        if (seedSong != null) {
-          final more = await CatalogService.fetchRecommendations(seedSong, limit: 15);
-          final existingIds = _queue.map((s) => s.id).toSet();
-          final newTracks = more.where((s) => !existingIds.contains(s.id) && !Song.isPlaceholder(s)).toList();
-          if (newTracks.isNotEmpty) {
-            _queue.addAll(newTracks);
-            if (_isShuffle) {
-              _unshuffledQueue.addAll(newTracks);
-            }
-            notifyListeners();
+        final result = await YouTubeImporterService.fetchNextMixBatch(
+          playlistId: _activeMixPlaylistId!,
+          continuationToken: _mixContinuationToken,
+          currentVideoId: _mixLastVideoId,
+          currentParams: _mixLastParams,
+          seenIds: _mixSeenVideoIds,
+        );
+        if (result != null && result.songs.isNotEmpty) {
+          _mixContinuationToken = result.continuationToken;
+          if (result.nextVideoId != null) _mixLastVideoId = result.nextVideoId;
+          if (result.nextParams != null) _mixLastParams = result.nextParams;
+
+          _queue.addAll(result.songs);
+          if (_isShuffle) {
+            _unshuffledQueue.addAll(result.songs);
           }
+          notifyListeners();
+          debugPrint('[PlayerProvider] Infinitely appended ${result.songs.length} new mix tracks. Total in queue: ${_queue.length}');
         }
-      } catch (_) {
+      } catch (e) {
+        debugPrint('[PlayerProvider] Error fetching next mix batch: $e');
       } finally {
-        _isReplenishingQueue = false;
+        _isLoadingMoreMixTracks = false;
       }
     }
   }
 
-  Future<void> playSong(Song song, {List<Song>? contextQueue, bool isAutoAdvance = false}) async {
+  Future<void> playSong(Song song, {List<Song>? contextQueue, bool isAutoAdvance = false, String? playingFrom}) async {
     if (!isAutoAdvance) {
       // User-initiated tap or explicit playlist selection: reset failure counter
       _consecutiveStreamFailures = 0;
+    }
+    if (playingFrom != null) {
+      _playingFrom = playingFrom;
     }
     
     if (contextQueue != null) {
@@ -424,12 +442,11 @@ class PlayerProvider extends ChangeNotifier {
       }
     }
 
-    // Defer auxiliary metadata until after song playback has initiated
+    // Defer lyrics metadata until after song playback has initiated
     // (giving 100% network bandwidth to the initial audio chunks)
     Future.delayed(const Duration(milliseconds: 1200), () {
       if (currentSong?.id == song.id && _playSessionId == thisSession) {
         _loadLyrics(song);
-        _loadRecommendations(song);
       }
     });
 
@@ -440,7 +457,9 @@ class PlayerProvider extends ChangeNotifier {
     }
     _isLoadingStream = false;
     notifyListeners();
-    _replenishQueueIfNeeded();
+    if (_isMixActive) {
+      _fetchMoreMixTracksIfNeeded();
+    }
   }
 
   Future<void> _loadLyrics(Song song) async {
@@ -463,22 +482,15 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadRecommendations(Song song) async {
-    try {
-      final reco = await CatalogService.fetchRecommendations(song, limit: 12);
-      if (currentSong?.id == song.id) {
-        _recommendations = reco;
-        notifyListeners();
-      }
-    } catch (_) {}
-  }
-
   Future<void> startRadio(Song song) async {
+    _isMixActive = false;
+    _activeMixPlaylistId = null;
     final reco = await CatalogService.fetchRecommendations(song, limit: 15);
     _queue = [song, ...reco];
     _currentIndex = 0;
+    _playingFrom = 'Radio: ${song.title}';
     notifyListeners();
-    await playSong(song);
+    await playSong(song, playingFrom: _playingFrom);
   }
 
   void toggleAutoplay() {
@@ -541,11 +553,17 @@ class PlayerProvider extends ChangeNotifier {
 
     int nextIdx = _currentIndex + 1;
     if (nextIdx >= _queue.length) {
+      if (_isMixActive) {
+        await _fetchMoreMixTracksIfNeeded();
+        if (_currentIndex < _queue.length - 1) {
+          _currentIndex++;
+          notifyListeners();
+          await playSong(_queue[_currentIndex], isAutoAdvance: true);
+          return;
+        }
+      }
       if (_repeatMode == 'all') {
         nextIdx = 0;
-      } else if (_isAutoplayEnabled) {
-        await _handleSongCompleted();
-        return;
       } else {
         return; // End of queue
       }
@@ -553,6 +571,9 @@ class PlayerProvider extends ChangeNotifier {
     _currentIndex = nextIdx;
     notifyListeners();
     await playSong(_queue[_currentIndex], isAutoAdvance: true);
+    if (_isMixActive) {
+      _fetchMoreMixTracksIfNeeded();
+    }
   }
 
   Future<void> skipPrevious() async {
@@ -580,9 +601,9 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> setSpeed(double speed) async {
-    _speed = speed;
-    await _storageService.savePlaybackSpeed(speed);
-    await _audioHandler.setSpeed(speed);
+    _speed = (speed * 100).round() / 100.0;
+    await _storageService.savePlaybackSpeed(_speed);
+    await _audioHandler.setSpeed(_speed);
     notifyListeners();
   }
 
@@ -595,6 +616,7 @@ class PlayerProvider extends ChangeNotifier {
       _repeatMode = 'off';
     }
     await _storageService.saveRepeatMode(_repeatMode);
+    await _audioHandler.setPlayerRepeatMode(_repeatMode);
     notifyListeners();
   }
 
@@ -673,10 +695,12 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0, Song? targetSong}) async {
+  Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0, Song? targetSong, String? playingFrom}) async {
     final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
     if (validTracks.isEmpty) return;
     _consecutiveStreamFailures = 0;
+    _isMixActive = false;
+    _activeMixPlaylistId = null;
     _queue = List.from(validTracks);
     if (targetSong != null) {
       final targetIdx = _queue.indexWhere((s) => s.id == targetSong.id);
@@ -684,8 +708,11 @@ class PlayerProvider extends ChangeNotifier {
     } else {
       _currentIndex = startIndex.clamp(0, _queue.length - 1);
     }
+    if (playingFrom != null) {
+      _playingFrom = playingFrom;
+    }
     notifyListeners();
-    await playSong(_queue[_currentIndex]);
+    await playSong(_queue[_currentIndex], playingFrom: _playingFrom);
   }
 
   void addTracksToQueue(List<Song> tracks) {
@@ -917,10 +944,24 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> playPlaylist(Playlist playlist) async {
+  Future<void> playPlaylist(Playlist playlist, {int startIndex = 0}) async {
     if (playlist.songs.isNotEmpty) {
       _consecutiveStreamFailures = 0;
-      await playSong(playlist.songs.first, contextQueue: playlist.songs);
+      final isMix = playlist.id.startsWith('yt_mix_');
+      if (isMix) {
+        _isMixActive = true;
+        _activeMixPlaylistId = playlist.id.replaceFirst('yt_mix_', '');
+        _mixContinuationToken = playlist.continuationToken;
+        _mixSeenVideoIds.clear();
+        _mixSeenVideoIds.addAll(playlist.songs.map((s) => s.id.replaceFirst('yt_', '')));
+        _playingFrom = 'YouTube Mix: ${playlist.title}';
+      } else {
+        _isMixActive = false;
+        _activeMixPlaylistId = null;
+        _playingFrom = 'Playlist: ${playlist.title}';
+      }
+      final idx = startIndex.clamp(0, playlist.songs.length - 1);
+      await playSong(playlist.songs[idx], contextQueue: playlist.songs, playingFrom: _playingFrom);
     }
   }
 
@@ -1164,14 +1205,12 @@ class PlayerProvider extends ChangeNotifier {
         final pl = res.playlist!;
         _playlists.insert(0, pl);
         _storageService.savePlaylists(_playlists);
-        _queue = List.from(pl.songs);
-        _currentIndex = 0;
-        await playSong(pl.songs.first);
+        await playPlaylist(pl);
         notifyListeners();
         return 'Imported YouTube playlist "${pl.title}" (${pl.songs.length} tracks)';
       } else if (res.song != null) {
         addToQueue(res.song!);
-        await playSong(res.song!);
+        await playSong(res.song!, playingFrom: 'YouTube: ${res.song!.title}');
         return 'Playing "${res.song!.title}"';
       }
       return res.error ?? 'Could not parse YouTube link';

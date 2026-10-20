@@ -10,6 +10,8 @@ import 'tabs/pulsepipe_search_tab.dart';
 import 'tabs/pulsepipe_library_tab.dart';
 import 'diagnostics_log_screen.dart';
 
+typedef SineShellScreen = PulsePipeShellScreen;
+
 class PulsePipeShellScreen extends StatefulWidget {
   const PulsePipeShellScreen({super.key});
 
@@ -111,7 +113,7 @@ class _PulsePipeShellScreenState extends State<PulsePipeShellScreen> {
                 // Floating MiniPlayer docked above nav bar
                 const MiniPlayer(),
 
-                // PulsePipe Bottom Navigation Bar in Electric Blue
+                // Sine Bottom Navigation Bar in Electric Blue
                 Container(
                   decoration: BoxDecoration(
                     color: EmberColors.obsidianBase.withValues(alpha: 0.98),

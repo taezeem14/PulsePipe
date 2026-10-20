@@ -79,7 +79,7 @@ class SponsorBlockService {
       });
 
       final response = await http
-          .get(uri, headers: {'User-Agent': 'PulsePipe/1.0'})
+          .get(uri, headers: {'User-Agent': 'Sine/1.0'})
           .timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {

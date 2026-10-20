@@ -100,7 +100,7 @@ class _PasskeyGateScreenState extends State<PasskeyGateScreen>
 
                 // Brand Header
                 Text(
-                  'EMBER',
+                  'SINE',
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                         color: EmberColors.primaryAmberHi,
                         fontWeight: FontWeight.w900,
@@ -109,7 +109,7 @@ class _PasskeyGateScreenState extends State<PasskeyGateScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'cozy listening companion',
+                  'high-fidelity audio experience',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: EmberColors.textMuted,
                         letterSpacing: 1.2,

@@ -192,7 +192,7 @@ class SettingsContent extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                'PulsePipe was architected by Muhammad Taezeem Tariq (@taezeem14). Built with a deep obsession for pristine audio quality, zero ads, real-time lyrics, and high-fidelity YouTube NewPipe audio extraction.',
+                'Sine was architected by Muhammad Taezeem Tariq (@taezeem14). Built with a deep obsession for pristine audio quality, zero ads, real-time lyrics, and high-fidelity YouTube audio extraction.',
                 style: TextStyle(
                   color: EmberColors.textSecondary.withValues(alpha: 0.9),
                   fontSize: 12.5,
@@ -313,9 +313,9 @@ class SettingsContent extends StatelessWidget {
         const _SectionHeader(title: 'System & Architecture'),
         const _SettingsTile(
           icon: FontAwesomeIcons.mobileScreen,
-          title: 'PulsePipe Version',
-          subtitle: 'v1.0.0 (Release Build)',
-          trailing: Text('1.0.0', style: TextStyle(color: EmberColors.textMuted, fontSize: 12)),
+          title: 'Sine Version',
+          subtitle: 'v1.0.5 (Release Build)',
+          trailing: Text('1.0.5', style: TextStyle(color: EmberColors.textMuted, fontSize: 12)),
           onTap: null,
         ),
         const _SettingsTile(

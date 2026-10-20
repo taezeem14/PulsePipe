@@ -8,6 +8,7 @@ import '../widgets/ambient_glow.dart';
 import '../widgets/vinyl_disc.dart';
 import '../widgets/synchronized_lyrics_view.dart';
 import 'sound_shaping_sheet.dart';
+import 'playback_speed_sheet.dart';
 import 'track_options_sheet.dart';
 import 'queue_discovery_screen.dart';
 
@@ -102,7 +103,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          player.activeCategory.replaceAll('_', ' ').toUpperCase(),
+                          player.playingFrom.toUpperCase(),
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                 color: EmberColors.primaryAmber,
                                 fontWeight: FontWeight.bold,
@@ -382,11 +383,16 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                     onPressed: () => player.skipNext(),
                   ),
                   IconButton(
-                    icon: FaIcon(
-                      FontAwesomeIcons.repeat,
+                    icon: Icon(
+                      player.repeatMode == 'one'
+                          ? Icons.repeat_one_rounded
+                          : Icons.repeat_rounded,
                       color: player.repeatMode != 'off' ? EmberColors.primaryAmber : EmberColors.textMuted,
-                      size: 18,
+                      size: 22,
                     ),
+                    tooltip: player.repeatMode == 'one'
+                        ? 'Repeat: One'
+                        : (player.repeatMode == 'all' ? 'Repeat: All' : 'Repeat: Off'),
                     onPressed: () => player.cycleRepeatMode(),
                   ),
                 ],
@@ -428,16 +434,12 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                       onTap: () => _showSleepTimerDialog(context, player),
                     ),
                     const SizedBox(width: 8),
-                    // Playback Speed
+                    // Playback Speed (YouTube-style Sheet with fine-tuning slider)
                     _PillAction(
                       icon: FontAwesomeIcons.gaugeHigh,
                       label: '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 1 : 2)}x',
                       active: player.speed != 1.0,
-                      onTap: () {
-                        final speeds = [1.0, 1.25, 1.5, 0.75];
-                        final next = speeds[(speeds.indexOf(player.speed) + 1) % speeds.length];
-                        player.setSpeed(next);
-                      },
+                      onTap: () => PlaybackSpeedSheet.show(context),
                     ),
                     const SizedBox(width: 8),
                     // Queue Screen

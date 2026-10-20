@@ -23,6 +23,20 @@ class YouTubeImportResult {
   });
 }
 
+class MixContinuationResult {
+  final List<Song> songs;
+  final String? continuationToken;
+  final String? nextVideoId;
+  final String? nextParams;
+
+  const MixContinuationResult({
+    required this.songs,
+    this.continuationToken,
+    this.nextVideoId,
+    this.nextParams,
+  });
+}
+
 class YouTubeImporterService {
   static YouTubeImportType detectUrlType(String url) {
     final clean = url.trim();
@@ -300,8 +314,126 @@ class YouTubeImporterService {
   }
 
 
+  /// Result of fetching a mix continuation batch
+  static Future<MixContinuationResult?> fetchNextMixBatch({
+    required String playlistId,
+    String? continuationToken,
+    String? currentVideoId,
+    String? currentParams,
+    Set<String>? seenIds,
+  }) async {
+    try {
+      final Map<String, dynamic> requestBody = {
+        "context": {
+          "client": {
+            "clientName": "WEB",
+            "clientVersion": "2.20240101.00.00",
+            "hl": "en",
+            "gl": "US"
+          }
+        },
+      };
+
+      if (continuationToken != null && continuationToken.isNotEmpty) {
+        requestBody["continuation"] = continuationToken;
+      } else {
+        if (currentVideoId != null && currentVideoId.isNotEmpty) {
+          requestBody["videoId"] = currentVideoId;
+        }
+        requestBody["playlistId"] = playlistId;
+        if (currentParams != null && currentParams.isNotEmpty) {
+          requestBody["params"] = currentParams;
+        }
+      }
+
+      final resp = await http.post(
+        Uri.parse('https://www.youtube.com/youtubei/v1/next?prettyPrint=false'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: jsonEncode(requestBody),
+      ).timeout(const Duration(seconds: 8));
+
+      if (resp.statusCode != 200) return null;
+
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      final plData = json['continuationContents']?['playlistPanelContinuation'] ??
+          json['contents']?['twoColumnWatchNextResults']?['playlist']?['playlist'];
+      if (plData == null) return null;
+
+      final contents = plData['contents'] as List? ?? [];
+      final songs = <Song>[];
+      final seen = seenIds ?? <String>{};
+      String? nextContinuation;
+      String? nextVid;
+      String? nextPrm;
+
+      for (final item in contents) {
+        final contRenderer = item['continuationItemRenderer'];
+        if (contRenderer != null) {
+          nextContinuation = contRenderer['continuationEndpoint']?['continuationCommand']?['token'] as String?;
+          continue;
+        }
+
+        final renderer = item['playlistPanelVideoRenderer'];
+        if (renderer != null) {
+          final vId = renderer['videoId'] as String?;
+          if (vId == null || vId.isEmpty) continue;
+
+          if (!seen.contains(vId)) {
+            seen.add(vId);
+            final trackTitle = _extractText(renderer['title']) ?? 'YouTube Track';
+            final trackAuthor = _extractText(renderer['shortBylineText']) ?? 'YouTube Artist';
+            final meta = parseYouTubeMetadata(trackTitle, trackAuthor);
+            final durText = renderer['lengthText']?['simpleText'] as String?;
+            final thumbs = renderer['thumbnail']?['thumbnails'] as List?;
+            final art = (thumbs != null && thumbs.isNotEmpty)
+                ? thumbs.last['url'] as String? ?? 'https://i.ytimg.com/vi/$vId/hqdefault.jpg'
+                : 'https://i.ytimg.com/vi/$vId/hqdefault.jpg';
+
+            songs.add(
+              Song(
+                id: 'yt_$vId',
+                title: meta.cleanTitle,
+                artist: meta.cleanArtist.isNotEmpty ? meta.cleanArtist : trackAuthor,
+                duration: parseDurationText(durText),
+                artworkUrl: art,
+                streamUrl: 'https://www.youtube.com/watch?v=$vId',
+                source: 'youtube_mix',
+              ),
+            );
+          }
+
+          final endpoint = renderer['navigationEndpoint']?['watchEndpoint'];
+          if (endpoint != null) {
+            nextVid = endpoint['videoId'] as String?;
+            nextPrm = endpoint['params'] as String?;
+          }
+        }
+      }
+
+      if (nextContinuation == null) {
+        final contList = plData['continuations'] as List?;
+        if (contList != null && contList.isNotEmpty) {
+          nextContinuation = contList[0]?['nextContinuationData']?['continuation'] as String?;
+        }
+      }
+
+      return MixContinuationResult(
+        songs: songs,
+        continuationToken: nextContinuation,
+        nextVideoId: nextVid,
+        nextParams: nextPrm,
+      );
+    } catch (e) {
+      debugPrint('[YouTubeImporterService] Error fetching next mix batch: $e');
+      return null;
+    }
+  }
+
   /// NewPipe-style extraction for YouTube Mixes (list=RD..., list=RDMM, radio mixes)
-  /// Paginates through YouTube's next endpoint to fetch 100+ tracks dynamically
+  /// Fetches initial batches dynamically and retains continuation token for infinite playback
   static Future<Playlist?> _importYouTubeMix(String? videoId, String playlistId) async {
     try {
       final songs = <Song>[];
@@ -312,126 +444,30 @@ class YouTubeImporterService {
       String? currentParams;
       String? continuationToken;
 
-      // Fetch multiple batches (up to 8 iterations, yielding up to 150-200 tracks)
-      for (int page = 0; page < 8; page++) {
-        final Map<String, dynamic> requestBody = {
-          "context": {
-            "client": {
-              "clientName": "WEB",
-              "clientVersion": "2.20240101.00.00",
-              "hl": "en",
-              "gl": "US"
-            }
-          },
-        };
+      // Fetch initial batches (up to 4 pages yielding 50-100 tracks to start immediately)
+      for (int page = 0; page < 4; page++) {
+        final result = await fetchNextMixBatch(
+          playlistId: playlistId,
+          continuationToken: continuationToken,
+          currentVideoId: currentVideoId,
+          currentParams: currentParams,
+          seenIds: seenIds,
+        );
 
-        if (continuationToken != null && continuationToken.isNotEmpty) {
-          requestBody["continuation"] = continuationToken;
-        } else {
-          if (currentVideoId != null && currentVideoId.isNotEmpty) {
-            requestBody["videoId"] = currentVideoId;
-          }
-          requestBody["playlistId"] = playlistId;
-          if (currentParams != null && currentParams.isNotEmpty) {
-            requestBody["params"] = currentParams;
-          }
-        }
-
-        final resp = await http.post(
-          Uri.parse('https://www.youtube.com/youtubei/v1/next?prettyPrint=false'),
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          },
-          body: jsonEncode(requestBody),
-        ).timeout(const Duration(seconds: 8));
-
-        if (resp.statusCode != 200) break;
-
-        final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        final plData = json['continuationContents']?['playlistPanelContinuation'] ??
-            json['contents']?['twoColumnWatchNextResults']?['playlist']?['playlist'];
-        if (plData == null) break;
+        if (result == null || result.songs.isEmpty) break;
 
         if (page == 0) {
-          title = plData['title'] as String? ?? 'YouTube Mix';
-          author = plData['ownerName']?['simpleText'] as String? ?? 'YouTube Mix';
+          final first = result.songs.first;
+          title = 'Mix - ${first.title}';
+          author = first.artist;
         }
 
-        final contents = plData['contents'] as List? ?? [];
-        if (contents.isEmpty) break;
+        songs.addAll(result.songs);
+        continuationToken = result.continuationToken;
+        if (result.nextVideoId != null) currentVideoId = result.nextVideoId;
+        if (result.nextParams != null) currentParams = result.nextParams;
 
-        int addedInThisPage = 0;
-        String? nextVid;
-        String? nextPrm;
-        String? nextContinuation;
-
-        for (final item in contents) {
-          final contRenderer = item['continuationItemRenderer'];
-          if (contRenderer != null) {
-            nextContinuation = contRenderer['continuationEndpoint']?['continuationCommand']?['token'] as String?;
-            continue;
-          }
-
-          final renderer = item['playlistPanelVideoRenderer'];
-          if (renderer != null) {
-            final vId = renderer['videoId'] as String?;
-            if (vId == null || vId.isEmpty) continue;
-
-            if (!seenIds.contains(vId)) {
-              seenIds.add(vId);
-              final trackTitle = _extractText(renderer['title']) ?? 'YouTube Track';
-              final trackAuthor = _extractText(renderer['shortBylineText']) ?? author;
-              final meta = parseYouTubeMetadata(trackTitle, trackAuthor);
-              final durText = renderer['lengthText']?['simpleText'] as String?;
-              final thumbs = renderer['thumbnail']?['thumbnails'] as List?;
-              final art = (thumbs != null && thumbs.isNotEmpty)
-                  ? thumbs.last['url'] as String? ?? 'https://i.ytimg.com/vi/$vId/hqdefault.jpg'
-                  : 'https://i.ytimg.com/vi/$vId/hqdefault.jpg';
-
-              songs.add(
-                Song(
-                  id: 'yt_$vId',
-                  title: meta.cleanTitle,
-                  artist: meta.cleanArtist.isNotEmpty ? meta.cleanArtist : trackAuthor,
-                  duration: parseDurationText(durText),
-                  artworkUrl: art,
-                  streamUrl: 'https://www.youtube.com/watch?v=$vId',
-                  source: 'youtube',
-                ),
-              );
-              addedInThisPage++;
-            }
-
-            final endpoint = renderer['navigationEndpoint']?['watchEndpoint'];
-            if (endpoint != null) {
-              nextVid = endpoint['videoId'] as String?;
-              nextPrm = endpoint['params'] as String?;
-            }
-          }
-        }
-
-        if (nextContinuation == null) {
-          final contList = plData['continuations'] as List?;
-          if (contList != null && contList.isNotEmpty) {
-            nextContinuation = contList[0]?['nextContinuationData']?['continuation'] as String?;
-          }
-        }
-
-        continuationToken = nextContinuation;
-
-        // If no new tracks were added, end pagination
-        if (addedInThisPage == 0) {
-          break;
-        }
-
-        // If no continuation token and no new videoId, break
-        if (continuationToken == null && (nextVid == null || nextVid == currentVideoId)) {
-          break;
-        }
-
-        if (nextVid != null) currentVideoId = nextVid;
-        if (nextPrm != null) currentParams = nextPrm;
+        if (continuationToken == null && currentVideoId == null) break;
       }
 
       if (songs.isNotEmpty) {
@@ -439,10 +475,11 @@ class YouTubeImporterService {
         return Playlist(
           id: 'yt_mix_$playlistId',
           title: title,
-          description: 'YouTube Mix • ${songs.length} tracks',
+          description: 'YouTube Mix • $author • Infinite Queue',
           songs: songs,
           createdAt: DateTime.now(),
           coverUrl: songs.first.artworkUrl,
+          continuationToken: continuationToken,
         );
       }
     } catch (e) {

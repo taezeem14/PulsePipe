@@ -224,7 +224,7 @@ class PlaylistDetailSheet extends StatelessWidget {
                         ),
                         onPressed: () {
                           final shuffled = List<Song>.from(currentPl.songs)..shuffle();
-                          player.playCategoryTracks(shuffled);
+                          player.playCategoryTracks(shuffled, playingFrom: 'Playlist: ${currentPl.title} (Shuffle)');
                           Navigator.pop(context);
                         },
                         icon: const FaIcon(FontAwesomeIcons.shuffle, size: 14),
@@ -332,7 +332,7 @@ class PlaylistDetailSheet extends StatelessWidget {
                                 ],
                               ),
                               onTap: () {
-                                player.playSong(song, contextQueue: currentPl.songs);
+                                player.playPlaylist(currentPl, startIndex: index);
                               },
                             ),
                           ),

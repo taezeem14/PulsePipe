@@ -4,15 +4,28 @@ import '../models/song.dart';
 import '../models/playlist.dart';
 
 class StorageService {
-  static const String _favsKey = 'ember_favorites_v1';
-  static const String _histKey = 'ember_history_v1';
-  static const String _speedKey = 'ember_playback_speed';
-  static const String _playlistsKey = 'ember_playlists_v1';
-  static const String _downloadsKey = 'ember_downloads_v1';
-  static const String _eqPresetKey = 'ember_eq_preset';
-  static const String _eqEnabledKey = 'ember_eq_enabled';
-  static const String _eqBassBoostKey = 'ember_eq_bass_boost';
-  static const String _eqBandGainsKey = 'ember_eq_band_gains';
+  static const String _favsKey = 'sine_favorites_v1';
+  static const String _favsLegacyKey = 'ember_favorites_v1';
+  static const String _histKey = 'sine_history_v1';
+  static const String _histLegacyKey = 'ember_history_v1';
+  static const String _speedKey = 'sine_playback_speed';
+  static const String _speedLegacyKey = 'ember_playback_speed';
+  static const String _playlistsKey = 'sine_playlists_v1';
+  static const String _playlistsLegacyKey = 'ember_playlists_v1';
+  static const String _downloadsKey = 'sine_downloads_v1';
+  static const String _downloadsLegacyKey = 'ember_downloads_v1';
+  static const String _eqPresetKey = 'sine_eq_preset';
+  static const String _eqPresetLegacyKey = 'ember_eq_preset';
+  static const String _eqEnabledKey = 'sine_eq_enabled';
+  static const String _eqEnabledLegacyKey = 'ember_eq_enabled';
+  static const String _eqBassBoostKey = 'sine_eq_bass_boost';
+  static const String _eqBassBoostLegacyKey = 'ember_eq_bass_boost';
+  static const String _eqBandGainsKey = 'sine_eq_band_gains';
+  static const String _eqBandGainsLegacyKey = 'ember_eq_band_gains';
+  static const String _repeatModeKey = 'sine_repeat_mode';
+  static const String _repeatModeLegacyKey = 'pulsepipe_repeat_mode';
+  static const String _shuffleKey = 'sine_shuffle';
+  static const String _shuffleLegacyKey = 'pulsepipe_shuffle';
 
   final SharedPreferences? _prefs;
   final List<Song> _memFavorites = [];
@@ -53,7 +66,7 @@ class StorageService {
     if (_prefs == null) {
       return List.unmodifiable(_memFavorites.where((s) => !Song.isPlaceholder(s)));
     }
-    final raw = _prefs.getStringList(_favsKey) ?? [];
+    final raw = _prefs.getStringList(_favsKey) ?? _prefs.getStringList(_favsLegacyKey) ?? [];
     final cleaned = raw
         .map((s) {
           try {
@@ -93,7 +106,7 @@ class StorageService {
     if (_prefs == null) {
       return List.unmodifiable(_memHistory.where((s) => !Song.isPlaceholder(s)));
     }
-    final raw = _prefs.getStringList(_histKey) ?? [];
+    final raw = _prefs.getStringList(_histKey) ?? _prefs.getStringList(_histLegacyKey) ?? [];
     final cleaned = raw
         .map((s) {
           try {
@@ -140,7 +153,7 @@ class StorageService {
     if (_prefs == null) {
       return List<Playlist>.from(_memPlaylists);
     }
-    final raw = _prefs.getStringList(_playlistsKey) ?? [];
+    final raw = _prefs.getStringList(_playlistsKey) ?? _prefs.getStringList(_playlistsLegacyKey) ?? [];
     final list = <Playlist>[];
     for (final s in raw) {
       try {
@@ -211,7 +224,7 @@ class StorageService {
     if (_prefs == null) {
       return List<Song>.from(_memDownloads.where((s) => !Song.isPlaceholder(s)));
     }
-    final raw = _prefs.getStringList(_downloadsKey) ?? [];
+    final raw = _prefs.getStringList(_downloadsKey) ?? _prefs.getStringList(_downloadsLegacyKey) ?? [];
     final cleaned = raw
         .map((s) {
           try {
@@ -247,11 +260,8 @@ class StorageService {
     }
   }
 
-  static const _repeatModeKey = 'pulsepipe_repeat_mode';
-  static const _shuffleKey = 'pulsepipe_shuffle';
-
   String loadRepeatMode() {
-    return _prefs?.getString(_repeatModeKey) ?? 'off';
+    return _prefs?.getString(_repeatModeKey) ?? _prefs?.getString(_repeatModeLegacyKey) ?? 'off';
   }
 
   Future<void> saveRepeatMode(String mode) async {
@@ -259,7 +269,7 @@ class StorageService {
   }
 
   bool loadShuffle() {
-    return _prefs?.getBool(_shuffleKey) ?? false;
+    return _prefs?.getBool(_shuffleKey) ?? _prefs?.getBool(_shuffleLegacyKey) ?? false;
   }
 
   Future<void> saveShuffle(bool shuffle) async {
@@ -267,7 +277,7 @@ class StorageService {
   }
 
   double loadPlaybackSpeed() {
-    return _prefs?.getDouble(_speedKey) ?? _memSpeed;
+    return _prefs?.getDouble(_speedKey) ?? _prefs?.getDouble(_speedLegacyKey) ?? _memSpeed;
   }
 
   Future<void> savePlaybackSpeed(double speed) async {
@@ -276,7 +286,7 @@ class StorageService {
   }
 
   String loadEqualizerPreset() {
-    return _prefs?.getString(_eqPresetKey) ?? 'Flat';
+    return _prefs?.getString(_eqPresetKey) ?? _prefs?.getString(_eqPresetLegacyKey) ?? 'Flat';
   }
 
   Future<void> saveEqualizerPreset(String preset) async {
@@ -284,7 +294,7 @@ class StorageService {
   }
 
   bool loadEqualizerEnabled() {
-    return _prefs?.getBool(_eqEnabledKey) ?? false;
+    return _prefs?.getBool(_eqEnabledKey) ?? _prefs?.getBool(_eqEnabledLegacyKey) ?? false;
   }
 
   Future<void> saveEqualizerEnabled(bool enabled) async {
@@ -292,7 +302,7 @@ class StorageService {
   }
 
   double loadBassBoost() {
-    return _prefs?.getDouble(_eqBassBoostKey) ?? 0.0;
+    return _prefs?.getDouble(_eqBassBoostKey) ?? _prefs?.getDouble(_eqBassBoostLegacyKey) ?? 0.0;
   }
 
   Future<void> saveBassBoost(double gain) async {
@@ -300,7 +310,7 @@ class StorageService {
   }
 
   Map<int, double> loadBandGains() {
-    final raw = _prefs?.getString(_eqBandGainsKey);
+    final raw = _prefs?.getString(_eqBandGainsKey) ?? _prefs?.getString(_eqBandGainsLegacyKey);
     if (raw == null) return {};
     try {
       final decoded = jsonDecode(raw);

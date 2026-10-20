@@ -1,7 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PasskeyService {
-  static const String _keyActivated = 'ember_passkey_activated_v1';
+  static const String _keyActivated = 'sine_passkey_activated_v1';
+  static const String _keyActivatedLegacy = 'ember_passkey_activated_v1';
 
   static const Set<String> passkeys = {
     // ── Block 1 ──────────────────────────────────────────────────────
@@ -37,14 +38,15 @@ class PasskeyService {
   };
 
   static bool isValid(String code) {
-    if (code.trim().isEmpty) return false;
-    return passkeys.contains(code.trim().toUpperCase());
+    final clean = code.trim().toUpperCase();
+    if (clean.isEmpty) return false;
+    return passkeys.contains(clean) || passkeys.contains(clean.replaceFirst('SINE-', 'EMBR-'));
   }
 
   static Future<bool> isActivated() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_keyActivated) ?? false;
+      return (prefs.getBool(_keyActivated) ?? prefs.getBool(_keyActivatedLegacy)) ?? false;
     } catch (_) {
       return false;
     }

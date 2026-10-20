@@ -57,7 +57,7 @@ class PipedService {
         final url = Uri.parse('$instance/streams/$videoId');
         final resp = await http.get(url, headers: {
           'Accept': 'application/json',
-          'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
+          'User-Agent': 'Sine/1.0 (Android ExoPlayer)',
         }).timeout(const Duration(milliseconds: 2500));
 
         if (resp.statusCode != 200) {
@@ -169,7 +169,7 @@ class PipedService {
         final url = Uri.parse('$instance/streams/$videoId');
         final resp = await http.get(url, headers: {
           'Accept': 'application/json',
-          'User-Agent': 'PulsePipe/1.0 (Android ExoPlayer)',
+          'User-Agent': 'Sine/1.0 (Android ExoPlayer)',
         }).timeout(const Duration(milliseconds: 4000));
 
         if (resp.statusCode != 200) {

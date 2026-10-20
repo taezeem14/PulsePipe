@@ -223,6 +223,78 @@ class SoundShapingSheet extends StatelessWidget {
                   );
                 },
               ),
+              const SizedBox(height: 16),
+              const Divider(color: EmberColors.outlineVariant, height: 1),
+              const SizedBox(height: 16),
+              // Playback Speed Section
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: EmberColors.primaryAmber.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const FaIcon(FontAwesomeIcons.gaugeHigh, size: 14, color: EmberColors.primaryAmber),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Playback Speed (${player.speed.toStringAsFixed(2)}x)',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: EmberColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ],
+                  ),
+                  TextButton(
+                    onPressed: player.speed == 1.0 ? null : () => player.setSpeed(1.0),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Normal',
+                      style: TextStyle(
+                        color: player.speed == 1.0 ? EmberColors.textMuted : EmberColors.primaryAmber,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const Text('0.25x', style: TextStyle(color: EmberColors.textMuted, fontSize: 11)),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: EmberColors.primaryAmber,
+                        inactiveTrackColor: EmberColors.outlineVariant.withValues(alpha: 0.4),
+                        thumbColor: EmberColors.primaryAmberHi,
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                      ),
+                      child: Slider(
+                        value: player.speed.clamp(0.25, 2.0),
+                        min: 0.25,
+                        max: 2.0,
+                        divisions: 35,
+                        onChanged: (val) {
+                          final rounded = (val * 100).round() / 100.0;
+                          player.setSpeed(rounded);
+                        },
+                      ),
+                    ),
+                  ),
+                  const Text('2.0x', style: TextStyle(color: EmberColors.textMuted, fontSize: 11)),
+                ],
+              ),
             ],
           ),
         ),

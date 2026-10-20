@@ -29,16 +29,16 @@ void main() async {
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    debugPrint('Ember Flutter Error: ${details.exception}');
+    debugPrint('Sine Flutter Error: ${details.exception}');
   };
 
-  EmberAudioHandler audioHandler;
+  SineAudioHandler audioHandler;
   try {
     final rawHandler = await initAudioHandler();
-    audioHandler = rawHandler is EmberAudioHandler ? rawHandler : EmberAudioHandler();
+    audioHandler = rawHandler is SineAudioHandler ? rawHandler : SineAudioHandler();
   } catch (e) {
     debugPrint('AudioHandler init fallback: $e');
-    audioHandler = EmberAudioHandler();
+    audioHandler = SineAudioHandler();
   }
 
   StorageService storageService;
@@ -50,18 +50,20 @@ void main() async {
   }
 
   runApp(
-    EmberMobileApp(
+    SineMobileApp(
       audioHandler: audioHandler,
       storageService: storageService,
     ),
   );
 }
 
-class EmberMobileApp extends StatelessWidget {
-  final EmberAudioHandler audioHandler;
+typedef EmberMobileApp = SineMobileApp;
+
+class SineMobileApp extends StatelessWidget {
+  final SineAudioHandler audioHandler;
   final StorageService storageService;
 
-  const EmberMobileApp({
+  const SineMobileApp({
     super.key,
     required this.audioHandler,
     required this.storageService,
@@ -76,7 +78,7 @@ class EmberMobileApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'PulsePipe',
+        title: 'Sine',
         debugShowCheckedModeBanner: false,
         theme: EmberTheme.darkTheme,
         home: const PulsePipeShellScreen(),

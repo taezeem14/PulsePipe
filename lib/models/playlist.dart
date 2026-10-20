@@ -9,6 +9,7 @@ class Playlist {
   final List<Song> songs;
   final DateTime createdAt;
   final String? coverUrl;
+  final String? continuationToken;
 
   const Playlist({
     required this.id,
@@ -17,6 +18,7 @@ class Playlist {
     required this.songs,
     required this.createdAt,
     this.coverUrl,
+    this.continuationToken,
   });
 
   Playlist copyWith({
@@ -26,6 +28,7 @@ class Playlist {
     List<Song>? songs,
     DateTime? createdAt,
     String? coverUrl,
+    String? continuationToken,
   }) {
     return Playlist(
       id: id ?? this.id,
@@ -34,6 +37,7 @@ class Playlist {
       songs: songs ?? this.songs,
       createdAt: createdAt ?? this.createdAt,
       coverUrl: coverUrl ?? this.coverUrl,
+      continuationToken: continuationToken ?? this.continuationToken,
     );
   }
 
@@ -45,6 +49,7 @@ class Playlist {
       'songs': songs.map((s) => s.toMap()).toList(),
       'createdAt': createdAt.toIso8601String(),
       'coverUrl': coverUrl,
+      'continuationToken': continuationToken,
     };
   }
 
@@ -60,6 +65,7 @@ class Playlist {
       createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       coverUrl: map['coverUrl']?.toString(),
+      continuationToken: map['continuationToken']?.toString(),
     );
   }
 

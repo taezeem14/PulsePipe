@@ -14,9 +14,9 @@ import 'log_service.dart';
 Future<AudioHandler> initAudioHandler() async {
   try {
     return await AudioService.init(
-      builder: () => EmberAudioHandler(),
+      builder: () => SineAudioHandler(),
       config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.taezeem.pulsepipe.channel.audio',
+        androidNotificationChannelId: 'com.taezeem.sine.channel.audio',
         androidNotificationChannelName: 'Sine Playback',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
@@ -25,17 +25,19 @@ Future<AudioHandler> initAudioHandler() async {
     ).timeout(
       const Duration(seconds: 4),
       onTimeout: () {
-        debugPrint('AudioService.init timeout -> using fallback local EmberAudioHandler');
-        return EmberAudioHandler();
+        debugPrint('AudioService.init timeout -> using fallback local SineAudioHandler');
+        return SineAudioHandler();
       },
     );
   } catch (e, st) {
-    debugPrint('AudioService.init error: $e\n$st -> using fallback local EmberAudioHandler');
-    return EmberAudioHandler();
+    debugPrint('AudioService.init error: $e\n$st -> using fallback local SineAudioHandler');
+    return SineAudioHandler();
   }
 }
 
-class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+typedef EmberAudioHandler = SineAudioHandler;
+
+class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final AndroidEqualizer _equalizer = AndroidEqualizer();
   final AndroidLoudnessEnhancer _loudnessEnhancer = AndroidLoudnessEnhancer();
   late final AudioPlayer _player;
@@ -96,7 +98,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   }
 
 
-  EmberAudioHandler() {
+  SineAudioHandler() {
     _player = AudioPlayer(
       audioLoadConfiguration: const AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
@@ -516,6 +518,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             return;
           }
           await _player.play();
+          await _restorePlaybackParameters();
           return;
         } else {
           // File does not exist locally anymore; fall through to online stream resolver
@@ -639,6 +642,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             debugPrint('[AudioHandler] Piped proxy fallback error for "${song.title}": $e');
           }
         }
+      }
+
+      if (started) {
+        await _restorePlaybackParameters();
       }
 
       if (!started) {
@@ -936,8 +943,57 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     await _player.seek(position);
   }
 
+  double _activeSpeed = 1.0;
+  String _activeRepeatMode = 'off';
+
   @override
-  Future<void> setSpeed(double speed) => _player.setSpeed(speed);
+  Future<void> setSpeed(double speed) async {
+    _activeSpeed = speed;
+    await _player.setSpeed(speed);
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    switch (repeatMode) {
+      case AudioServiceRepeatMode.none:
+        await setPlayerRepeatMode('off');
+        break;
+      case AudioServiceRepeatMode.one:
+        await setPlayerRepeatMode('one');
+        break;
+      case AudioServiceRepeatMode.all:
+      case AudioServiceRepeatMode.group:
+        await setPlayerRepeatMode('all');
+        break;
+    }
+  }
+
+  Future<void> setPlayerRepeatMode(String mode) async {
+    _activeRepeatMode = mode;
+    if (mode == 'one') {
+      await _player.setLoopMode(LoopMode.one);
+    } else {
+      await _player.setLoopMode(LoopMode.off);
+    }
+    final serviceMode = mode == 'one'
+        ? AudioServiceRepeatMode.one
+        : (mode == 'all' ? AudioServiceRepeatMode.all : AudioServiceRepeatMode.none);
+    playbackState.add(playbackState.value.copyWith(repeatMode: serviceMode));
+  }
+
+  /// Re-applies active speed and loop configurations when a new audio source prepares
+  Future<void> _restorePlaybackParameters() async {
+    try {
+      if (_activeSpeed != 1.0) {
+        await _player.setSpeed(_activeSpeed);
+      }
+      if (_activeRepeatMode == 'one') {
+        await _player.setLoopMode(LoopMode.one);
+      } else {
+        await _player.setLoopMode(LoopMode.off);
+      }
+    } catch (_) {}
+  }
 
   @override
   Future<void> stop() async {

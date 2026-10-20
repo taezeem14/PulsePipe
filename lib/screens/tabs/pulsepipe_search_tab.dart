@@ -7,6 +7,8 @@ import '../../providers/player_provider.dart';
 import '../../theme/ember_theme.dart';
 import '../track_options_sheet.dart';
 
+typedef SineSearchTab = PulsePipeSearchTab;
+
 class PulsePipeSearchTab extends StatefulWidget {
   const PulsePipeSearchTab({super.key});
 
@@ -335,10 +337,12 @@ class _PulsePipeSearchTabState extends State<PulsePipeSearchTab> {
                                   isCurrent: isCurrent,
                                   isPlaying: isCurrent && player.isPlaying,
                                   onTap: () {
+                                    final q = _controller.text.trim();
                                     player.playCategoryTracks(
                                       searchResultsSnapshot,
                                       startIndex: index,
                                       targetSong: song,
+                                      playingFrom: q.isNotEmpty ? 'Search: "$q"' : 'Search Results',
                                     );
                                   },
                                   onOptions: () => TrackOptionsSheet.show(context, song),

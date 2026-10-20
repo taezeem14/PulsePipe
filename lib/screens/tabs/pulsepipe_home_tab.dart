@@ -10,6 +10,8 @@ import '../settings_screen.dart';
 import '../sound_shaping_sheet.dart';
 import '../track_options_sheet.dart';
 
+typedef SineHomeTab = PulsePipeHomeTab;
+
 class PulsePipeHomeTab extends StatefulWidget {
   final VoidCallback onOpenLibrary;
   final VoidCallback onOpenSearch;
@@ -223,7 +225,7 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
                       itemCount: player.youtubeTracks.length,
                       itemBuilder: (context, index) {
                         final track = player.youtubeTracks[index];
-                        return _buildTrackCarouselCard(track, () => player.playSong(track));
+                        return _buildTrackCarouselCard(track, () => player.playSong(track, playingFrom: 'Trending on YouTube'));
                       },
                     ),
             ),
@@ -332,7 +334,12 @@ class _PulsePipeHomeTabState extends State<PulsePipeHomeTab> {
                           ),
                         ],
                       ),
-                      onTap: () => player.playSong(track),
+                      onTap: () => player.playCategoryTracks(
+                        player.youtubeTracks,
+                        startIndex: index,
+                        targetSong: track,
+                        playingFrom: 'YouTube Music Top Tracks',
+                      ),
                     ),
                   );
                 },

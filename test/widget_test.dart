@@ -8,7 +8,7 @@ import 'package:spotify_newpipe/services/youtube_importer_service.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
-  group('PulsePipe Music Architecture Tests', () {
+  group('Sine Music Architecture Tests', () {
     test('Song model initializes with correct metadata and serialization', () {
       const song = Song(
         id: 'yt_dQw4w9WgXcQ',

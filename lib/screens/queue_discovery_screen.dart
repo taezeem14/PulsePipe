@@ -64,7 +64,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'PULSEPIPE',
+                        'SINE',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               color: EmberColors.textPrimary,
                               fontWeight: FontWeight.w800,
@@ -552,7 +552,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                       const FaIcon(FontAwesomeIcons.radio, size: 14, color: EmberColors.primaryAmber),
                       const SizedBox(width: 8),
                       Text(
-                        'EMBER RADIO & UP NEXT',
+                        'SINE RADIO & UP NEXT',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: EmberColors.primaryAmber,
                               fontWeight: FontWeight.bold,
@@ -621,7 +621,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                           ),
                         ],
                       ),
-                      onTap: () => player.playSong(song),
+                      onTap: () => player.playSong(song, playingFrom: 'Recommended Tracks'),
                     ),
                   ),
                 );
@@ -858,7 +858,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                       ),
                     ],
                   ),
-                  onTap: () => player.playSong(song),
+                  onTap: () => player.playSong(song, playingFrom: 'Category: ${player.activeCategory.replaceAll('_', ' ')}'),
                 ),
               );
             },
@@ -1312,7 +1312,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
           ],
         ),
         onTap: () {
-          player.playSong(song, contextQueue: contextQueue);
+          player.playSong(song, contextQueue: contextQueue, playingFrom: 'Active Queue');
         },
       ),
     );

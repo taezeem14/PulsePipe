@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+typedef SineColors = EmberColors;
+typedef SineTheme = EmberTheme;
+
 class EmberColors {
   EmberColors._();
 
@@ -13,14 +16,14 @@ class EmberColors {
   static const Color surfaceContainerHigh = Color(0xFF282828);
   static const Color surfaceContainerHighest = Color(0xFF333333);
 
-  // PulsePipe Electric Blue & Luminous Cyan Accents
+  // Sine Electric Blue & Luminous Cyan Accents
   static const Color primaryBlue = Color(0xFF2979FF);
   static const Color primaryBlueHi = Color(0xFF82B1FF);
   static const Color secondaryCyan = Color(0xFF00D4FF);
   static const Color secondaryAzure = Color(0xFF1E88E5);
   static const Color tertiaryBlue = Color(0xFF448AFF);
 
-  // Convenience aliases for Electric Blue PulsePipe theme
+  // Convenience aliases for Electric Blue Sine theme
   static const Color electricBlue = primaryBlue;
   static const Color electricBlueHi = primaryBlueHi;
   static const Color charcoalCard = surfaceContainerLow;

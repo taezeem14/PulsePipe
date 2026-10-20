@@ -37,9 +37,9 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
       return;
     }
 
-    const lineEstimate = 52.0;
-    final screenHeight = _scrollController.position.viewportDimension;
-    final targetOffset = (index * lineEstimate) - (screenHeight / 2) + (lineEstimate / 2);
+    const lineEstimate = 56.0;
+    // With viewport-centered padding, offset of line index is index * lineEstimate
+    final targetOffset = index * lineEstimate;
     final clamped = targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent);
 
     _scrollController.animateTo(
@@ -114,67 +114,79 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
         });
       }
 
-      return NotificationListener<UserScrollNotification>(
-        onNotification: (notif) {
-          if (notif.direction != ScrollDirection.idle) {
-            _userScrolling = true;
-            _userScrollTimer?.cancel();
-          } else {
-            _userScrollTimer?.cancel();
-            _userScrollTimer = Timer(const Duration(seconds: 3), () {
-              if (mounted) _userScrolling = false;
-            });
-          }
-          return false;
-        },
-        child: ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-          itemCount: synced.length,
-          itemBuilder: (context, index) {
-            final line = synced[index];
-            final isActive = index == activeIdx;
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final verticalCenterPadding = (constraints.maxHeight / 2) - 28.0;
+          final safeVerticalPadding = verticalCenterPadding.clamp(24.0, 500.0);
 
-            if (line.text.trim().isEmpty) {
-              return const SizedBox(height: 16);
-            }
-
-            return GestureDetector(
-              onTap: () {
-                player.seek(line.timestamp);
-                _userScrolling = false;
-                _scrollToIndex(index, synced.length);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? EmberColors.primaryAmber.withValues(alpha: 0.14)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  border: isActive
-                      ? Border.all(color: EmberColors.primaryAmber.withValues(alpha: 0.3), width: 1)
-                      : null,
-                ),
-                child: Text(
-                  line.text,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isActive
-                        ? EmberColors.primaryAmberHi
-                        : EmberColors.textPrimary.withValues(alpha: 0.4),
-                    fontSize: isActive ? 18 : 15,
-                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                    height: 1.5,
-                    letterSpacing: isActive ? 0.3 : 0.0,
-                  ),
-                ),
+          return NotificationListener<UserScrollNotification>(
+            onNotification: (notif) {
+              if (notif.direction != ScrollDirection.idle) {
+                _userScrolling = true;
+                _userScrollTimer?.cancel();
+              } else {
+                _userScrollTimer?.cancel();
+                _userScrollTimer = Timer(const Duration(seconds: 3), () {
+                  if (mounted) _userScrolling = false;
+                });
+              }
+              return false;
+            },
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: safeVerticalPadding,
               ),
-            );
-          },
-        ),
+              itemCount: synced.length,
+              itemBuilder: (context, index) {
+                final line = synced[index];
+                final isActive = index == activeIdx;
+
+                if (line.text.trim().isEmpty) {
+                  return const SizedBox(height: 16);
+                }
+
+                return Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      player.seek(line.timestamp);
+                      _userScrolling = false;
+                      _scrollToIndex(index, synced.length);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? EmberColors.primaryAmber.withValues(alpha: 0.16)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        border: isActive
+                            ? Border.all(color: EmberColors.primaryAmber.withValues(alpha: 0.35), width: 1.2)
+                            : null,
+                      ),
+                      child: Text(
+                        line.text,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: isActive
+                              ? EmberColors.primaryAmberHi
+                              : EmberColors.textPrimary.withValues(alpha: 0.4),
+                          fontSize: isActive ? 18 : 15,
+                          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                          height: 1.5,
+                          letterSpacing: isActive ? 0.3 : 0.0,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
       );
     }
 

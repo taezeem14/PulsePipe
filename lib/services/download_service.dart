@@ -65,12 +65,25 @@ class DownloadService {
   /// Locate or create appropriate public/accessible media directory cross-platform
   static Future<Directory> _getMediaDirectory({bool isVideo = false}) async {
     if (Platform.isAndroid) {
+      // 1. Primary target requested: /storage/emulated/0/Sine-Music (same parent as Android and DCIM)
       try {
-        final extList = await getExternalStorageDirectories(
-          type: isVideo ? StorageDirectory.movies : StorageDirectory.downloads,
-        );
-        if (extList != null && extList.isNotEmpty) {
-          final dir = Directory('${extList.first.path}/PulsePipe');
+        final rootDir = Directory('/storage/emulated/0/Sine-Music');
+        if (!await rootDir.exists()) {
+          await rootDir.create(recursive: true);
+        }
+        return rootDir;
+      } catch (e) {
+        debugPrint('[DownloadService] Direct /storage/emulated/0/Sine-Music access notice: $e');
+      }
+
+      // 2. Derive root directory by stripping /Android from getExternalStorageDirectory()
+      try {
+        final ext = await getExternalStorageDirectory();
+        if (ext != null) {
+          final path = ext.path;
+          final androidIdx = path.indexOf('/Android');
+          final rootPath = androidIdx != -1 ? path.substring(0, androidIdx) : path;
+          final dir = Directory('$rootPath/Sine-Music');
           if (!await dir.exists()) {
             await dir.create(recursive: true);
           }
@@ -78,21 +91,28 @@ class DownloadService {
         }
       } catch (_) {}
 
+      // 3. Fallback to standard Music directory on primary external storage
       try {
-        final ext = await getExternalStorageDirectory();
-        if (ext != null) {
-          final dir = Directory('${ext.path}/PulsePipe');
-          if (!await dir.exists()) {
-            await dir.create(recursive: true);
-          }
-          return dir;
+        final musicDir = Directory('/storage/emulated/0/Music/Sine-Music');
+        if (!await musicDir.exists()) {
+          await musicDir.create(recursive: true);
         }
+        return musicDir;
+      } catch (_) {}
+
+      // 4. Fallback to standard Download directory on primary external storage
+      try {
+        final dlDir = Directory('/storage/emulated/0/Download/Sine-Music');
+        if (!await dlDir.exists()) {
+          await dlDir.create(recursive: true);
+        }
+        return dlDir;
       } catch (_) {}
     } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       try {
         final downloads = await getDownloadsDirectory();
         if (downloads != null) {
-          final dir = Directory('${downloads.path}/PulsePipe');
+          final dir = Directory('${downloads.path}/Sine-Music');
           if (!await dir.exists()) {
             await dir.create(recursive: true);
           }
@@ -102,7 +122,7 @@ class DownloadService {
     }
 
     final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory('${docs.path}/PulsePipe');
+    final dir = Directory('${docs.path}/Sine-Music');
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }

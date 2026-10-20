@@ -1,4 +1,4 @@
-# PulsePipe ProGuard / R8 Rules for ExoPlayer & AudioService
+# Sine ProGuard / R8 Rules for ExoPlayer & AudioService
 
 # Keep AudioService and MediaSession
 -keep class com.ryanheise.audioservice.** { *; }

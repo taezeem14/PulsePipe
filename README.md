@@ -23,7 +23,7 @@
 
 <br/>
 
-### [👉 📲 DOWNLOAD LATEST APK (v1.0.4)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.4.apk) 👈
+### [👉 📲 DOWNLOAD LATEST APK (v1.0.5)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.5.apk) 👈
 
 *Tap above, download the APK, install, and elevate your earholes immediately.*
 

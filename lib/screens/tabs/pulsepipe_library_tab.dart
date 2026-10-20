@@ -10,6 +10,8 @@ import '../playlist_detail_sheet.dart';
 import '../track_options_sheet.dart';
 import '../settings_screen.dart';
 
+typedef SineLibraryTab = PulsePipeLibraryTab;
+
 class PulsePipeLibraryTab extends StatefulWidget {
   const PulsePipeLibraryTab({super.key});
 
@@ -479,7 +481,7 @@ class _PulsePipeLibraryTabState extends State<PulsePipeLibraryTab> {
                         // Width of song in history is identical to queue and search
                         return InkWell(
                           onTap: () {
-                            player.playCategoryTracks(List<Song>.from(player.history), startIndex: index, targetSong: song);
+                            player.playCategoryTracks(List<Song>.from(player.history), startIndex: index, targetSong: song, playingFrom: 'Listening History');
                           },
                           splashColor: EmberColors.electricBlue.withValues(alpha: 0.15),
                           highlightColor: EmberColors.charcoalCard,

@@ -268,7 +268,7 @@ class TrackOptionsSheet extends StatelessWidget {
               icon: isDownloaded ? FontAwesomeIcons.circleCheck : FontAwesomeIcons.download,
               iconColor: isDownloaded ? EmberColors.primaryAmber : null,
               title: isDownloaded ? 'Downloaded (Offline Ready)' : 'Download Audio (MP3)',
-              subtitle: 'Save high-bitrate audio to Downloads/Music',
+              subtitle: 'Save high-bitrate audio to Sine-Music folder',
               onTap: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
@@ -284,7 +284,7 @@ class TrackOptionsSheet extends StatelessWidget {
                     messenger.showSnackBar(
                       const SnackBar(
                         backgroundColor: EmberColors.surfaceContainerHigh,
-                        content: Text('Saved to Downloads/PulsePipe!', style: TextStyle(color: EmberColors.primaryAmberHi)),
+                        content: Text('Saved to Sine-Music folder!', style: TextStyle(color: EmberColors.primaryAmberHi)),
                       ),
                     );
                   } else {
@@ -301,7 +301,7 @@ class TrackOptionsSheet extends StatelessWidget {
             _OptionTile(
               icon: FontAwesomeIcons.video,
               title: 'Download Video (MP4)',
-              subtitle: 'Save HD video directly to device Gallery/Movies',
+              subtitle: 'Save HD video directly to Sine-Music folder',
               onTap: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
@@ -316,7 +316,7 @@ class TrackOptionsSheet extends StatelessWidget {
                   messenger.showSnackBar(
                     const SnackBar(
                       backgroundColor: EmberColors.surfaceContainerHigh,
-                      content: Text('Video saved to Gallery / Movies!', style: TextStyle(color: EmberColors.primaryAmberHi)),
+                      content: Text('Video saved to Sine-Music folder!', style: TextStyle(color: EmberColors.primaryAmberHi)),
                     ),
                   );
                 } else {
@@ -340,7 +340,7 @@ class TrackOptionsSheet extends StatelessWidget {
                 messenger.showSnackBar(
                   SnackBar(
                     backgroundColor: EmberColors.surfaceContainerHigh,
-                    content: Text('Started Ember Radio based on "${song.title}"', style: const TextStyle(color: EmberColors.primaryAmberHi)),
+                    content: Text('Started Radio based on "${song.title}"', style: const TextStyle(color: EmberColors.primaryAmberHi)),
                   ),
                 );
               },
