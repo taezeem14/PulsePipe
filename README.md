@@ -23,7 +23,7 @@
 
 <br/>
 
-### [👉 📲 DOWNLOAD LATEST APK (v1.0.3)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.3.apk) 👈
+### [👉 📲 DOWNLOAD LATEST APK (v1.0.4)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.4.apk) 👈
 
 *Tap above, download the APK, install, and elevate your earholes immediately.*
 
@@ -125,7 +125,7 @@ sequenceDiagram
 ```mermaid
 xychart-beta
     title "Cold-Start Track Playback Latency in Seconds (Lower is Better)"
-    x-axis ["Sine v1.0.3", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
+    x-axis ["Sine v1.0.4", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
     y-axis "Startup Latency (Seconds)" 0 --> 35
     bar [1.2, 8.5, 6.2, 28.0]
 ```
@@ -133,7 +133,7 @@ xychart-beta
 ```
 Playback Latency Comparison:
 ========================================================================
-Sine v1.0.3          [██] 1.2s (Hardware AAC DSP + itag 140 Prioritization)
+Sine v1.0.4          [██] 1.2s (Hardware AAC DSP + itag 140 Prioritization)
 Spotify Free         [████████] 8.5s (Audio Ad Insertion + DRM Handshake)
 YouTube Music        [██████] 6.2s (Video Ad Ingestion + Player Handshake)
 Generic Scrapers     [████████████████████████████] 28.0s (DASH 403 Retries)
@@ -257,7 +257,7 @@ stateDiagram-v2
 ## ⚡ Installation (Super Easy)
 
 1. Head over to the **[Latest Releases](https://github.com/taezeem14/Sine/releases/latest)**.
-2. Download **`Sine-v1.0.3.apk`**.
+2. Download **`Sine-v1.0.4.apk`**.
 3. On your Android device, tap the downloaded APK.
 4. If prompted, toggle *"Allow install from unknown sources"* (it's open-source, safe, and completely transparent).
 5. Open Sine and start streaming! 🚀
@@ -302,7 +302,7 @@ flutter build apk --release --no-tree-shake-icons
 ```
 
 Your compiled APK will be located at:
-`build/app/outputs/flutter-apk/app-release.apk` (or `Sine-v1.0.3.apk`)
+`build/app/outputs/flutter-apk/app-release.apk` (or `Sine-v1.0.4.apk`)
 
 ---
 
