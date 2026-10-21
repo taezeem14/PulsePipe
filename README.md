@@ -1,4 +1,4 @@
-# ⚡ SINE — The Spotify-Killer Powered by YouTube (No Cap)
+# ⚡ SINE — The High-Fidelity YouTube Music Client (Zero Ads)
 
 <div align="center">
 
@@ -14,18 +14,23 @@
 ### *Streaming music hits different when you don't pay \$11/month for ads. Pure acoustics. Zero telemetry. 🎧✨*
 
 [![GitHub Release](https://img.shields.io/github/v/release/taezeem14/Sine?color=00d2ff&style=for-the-badge&logo=github)](https://github.com/taezeem14/Sine/releases/latest)
-[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/taezeem14/Sine/releases/latest)
+[![Platform](https://img.shields.io/badge/Platform-Android%208.0+-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/taezeem14/Sine/releases/latest)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![Engine](https://img.shields.io/badge/Engine-NewPipe%20Extractor-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/TeamNewPipe/NewPipe)
 [![Startup Latency](https://img.shields.io/badge/Startup%20Latency-1.2s%20Instant-success?style=for-the-badge&logo=speedtest&logoColor=white)](https://github.com/taezeem14/Sine)
-[![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](LICENSE)
 [![Zero Ads](https://img.shields.io/badge/Ads-ZERO%20ADS-success?style=for-the-badge&logo=adguard&logoColor=white)](https://github.com/taezeem14/Sine)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](LICENSE)
+[![Donate UPI](https://img.shields.io/badge/Donate-UPI%3A%207006616470%40fam-ff69b4?style=for-the-badge&logo=googlepay&logoColor=white)](#-10-direct-creator-support-upi)
 
 <br/>
 
 ### [👉 📲 DOWNLOAD LATEST APK (v1.0.6)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.6.apk) 👈
 
-*Tap above, download the APK, install, and elevate your earholes immediately.*
+*Tap above to download the APK, install on Android, and elevate your earholes immediately.*
+
+<br/>
+
+[🌐 Visit the Official Sine Product Website](https://taezeem14.github.io/Sine/)
 
 </div>
 
@@ -40,7 +45,8 @@ Look, Spotify got greedy with \$11+/month subscription prices and YouTube Music 
 - **No tracking or telemetry.**
 - **Zero ads. Ever.**
 - **Instant sub-1.2s playback** powered by native Android hardware DSP decoding.
-- **Offline vault** for saving tracks directly to local storage.
+- **Offline vault** for saving tracks directly to `/storage/emulated/0/Sine-Music`.
+- **Real-Time Sound Shaping** with Vocals-Only, Instruments-Only, and 5-band hardware parametric EQ.
 - Just pure, uninterrupted, audiophile-grade music streamed straight from YouTube & YouTube Music's global catalog.
 
 We cooked so you can vibe. Fr fr. 👨‍🍳🔥
@@ -95,7 +101,7 @@ sequenceDiagram
     participant Exo as Android ExoPlayer
     participant DSP as Hardware DSP (MediaCodec)
 
-    Listener->>UI: Selects Track ("Sonne Remix")
+    Listener->>UI: Selects Track ("ALWAYS BEEN YOU")
     UI->>Resolver: Request Playable Streams
     alt Memory Cache Hit
         Resolver-->>UI: Return Cached itag 140 URL (0ms)
@@ -142,15 +148,14 @@ Generic Scrapers     [███████████████████�
 
 ---
 
-### 4. Audio Stream Resolution & Decoder Distribution
+### 4. Audio Stream Pipeline Distribution
 
-```mermaid
-pie title "Audio Stream Resolution & Decoder Routing"
-    "Standalone AAC (itag 140 - Instant Hardware DSP)" : 84
-    "Standalone Opus (itag 251 - High-Fidelity Audiophile)" : 11
-    "Progressive Muxed MP4 (itag 18 - Fallback Container)" : 4
-    "Piped / Invidious Proxy Failover" : 1
-```
+| Stream Stream Protocol | Codec & Container | Target Hardware Decoder | Frequency Share | Latency |
+| :--- | :--- | :--- | :--- | :--- |
+| **Standalone AAC (itag 140)** | AAC-LC in MP4 container | Android MediaCodec Hardware AAC | **84%** | ~1.1s |
+| **Standalone Opus (itag 251)** | Opus in WebM container | Libopus Software Decoder | **11%** | ~1.3s |
+| **Progressive Muxed (itag 18)** | AAC + H.264 in MP4 | MediaCodec Direct Progressive | **4%** | ~0.9s |
+| **Piped / Invidious Proxy** | M4A HTTPS Stream | Regional Edge Failover Node | **1%** | ~1.8s |
 
 ---
 
@@ -160,7 +165,6 @@ pie title "Audio Stream Resolution & Decoder Routing"
 stateDiagram-v2
     [*] --> Idle
     Idle --> Loading : playSong(track)
-    note right of Loading : Flags Reset Prior to stop():\n_currentTrackActive = false\n_completionHandled = true
     Loading --> Ready : Buffer >= 400ms (~1.2s)
     Ready --> Playing : Audio Playback Starts
     Playing --> Paused : User Pause
@@ -182,7 +186,7 @@ stateDiagram-v2
 
 ## 🥊 Sine vs. The Competition
 
-| Feature | ⚡ **Sine** | 🟢 **Spotify Free** | 🔴 **YouTube Music** | 📺 **NewPipe** |
+| Feature | ⚡ **Sine v1.0.6** | 🟢 **Spotify Free** | 🔴 **YouTube Music** | 📺 **NewPipe** |
 | :--- | :---: | :---: | :---: | :---: |
 | **Monthly Cost** | **\$0 / Free Forever** | \$11.99/mo (Premium) | \$13.99/mo (Premium) | \$0 / Free |
 | **Audio Ads** | 🚫 **ZERO ADS** | 🔊 Unskippable 30s Ads | 🔊 Unskippable Video Ads | 🚫 ZERO ADS |
@@ -191,8 +195,9 @@ stateDiagram-v2
 | **Background & Lock Screen** | ✅ **Full Native Support** | ⚠️ Limited / Shuffled | 🔒 Locked Behind Paywall | ✅ Supported |
 | **SponsorBlock Integration** | ✅ **Auto-Skips Intros/Ads** | ❌ None | ❌ None | ✅ Optional |
 | **Hardware DSP Equalizer** | ✅ **Calibrated Multi-Band** | ⚠️ Basic 5-Band | ⚠️ Basic System EQ | ❌ None |
-| **Synced Karaoke Lyrics** | ✅ **Real-Time Scrolling** | 🔒 Paywalled | ⚠️ Static Lyrics Only | ❌ None |
-| **Offline Audio Vault** | ✅ **1-Tap Direct Download** | 🔒 DRM Encrypted (Paywall) | 🔒 DRM Encrypted (Paywall) | ✅ Media Download |
+| **Vocal / Instrumental Isolation** | ✅ **Hardware Real-Time** | ❌ None | ❌ None | ❌ None |
+| **Synced Karaoke Lyrics** | ✅ **Centered Auto-Scroll** | 🔒 Paywalled | ⚠️ Static Lyrics Only | ❌ None |
+| **Offline Storage Directory** | ✅ **/Sine-Music (Root)** | 🔒 DRM Encrypted | 🔒 DRM Encrypted | ✅ Media Download |
 | **Privacy & Telemetry** | 🛡️ **Zero Tracking / Private** | 👁️ Aggressive Ad Tracking | 👁️ Full Google Tracking | 🛡️ Private |
 
 ---
@@ -225,9 +230,9 @@ stateDiagram-v2
 ### 🎚️ 5. Studio-Grade Hardware Multi-Band DSP Equalizer + Sound Shaping
 - No artificial gain blowouts or ear-splitting volume glitches.
 - Pure Android hardware DSP multi-band EQ calibrated for pristine frequency response.
-- **Vocal & Instrument Filters**:
-  - 🎙️ `Vocals Only`: Accentuates human vocal frequencies while attenuating background instruments.
-  - 🎸 `Instruments Only`: Karaoke mode rolling off center vocal frequencies for instrumental enjoyment.
+- **Vocal & Instrument Isolation Filters**:
+  - 🎙️ `Vocals Only`: Accentuates human vocal frequencies while attenuating background instruments (acapella extraction).
+  - 🎸 `Instruments Only`: Karaoke mode rolling off center vocal frequencies for pure instrumental enjoyment.
 - **Acoustic Presets**:
   - 📻 `Warm Tape` — Analog vintage saturation & tape warmth
   - ☕ `Lo-Fi` — Mid-focused nostalgic frequency roll-off
@@ -235,7 +240,7 @@ stateDiagram-v2
   - 🎙️ `Vocal Air` — High-shelf presence for crisp vocals
   - 🎸 `Acoustic` — Balanced natural instrument dynamics
   - 🎛️ `Flat` — Studio reference monitor profile
-- **Variable Playback Speed**: Smooth YouTube-style speed slider from 0.25x up to 2.0x.
+- **Variable Playback Speed**: Smooth YouTube-style speed slider from 0.25x up to 2.0x with pitch-preservation.
 
 ### ♾️ 6. Infinite YouTube Mixes & Endless Queue
 - Put on any YouTube Mix or Radio (`list=RD...`, `list=RDMM...`) and Sine paginates endlessly just like NewPipe.
@@ -260,6 +265,7 @@ stateDiagram-v2
 ### 💖 10. Direct Creator Support (UPI)
 - Built-in UPI donation tab in Settings supporting instant contributions to `7006616470@fam`.
 - Quick-tap contribution presets (₹50, ₹100, ₹250, ₹500, ₹1000) and scan-to-pay QR code generator.
+- Deep links directly launch Google Pay, PhonePe, Paytm, or BHIM.
 
 ### 📱 11. Native Android Background Playback & Lock Screen
 - Fully integrated with Android `MediaSession` and `AudioService`.
@@ -274,6 +280,11 @@ stateDiagram-v2
 3. On your Android device, tap the downloaded APK.
 4. If prompted, toggle *"Allow install from unknown sources"* (it's open-source, safe, and completely transparent).
 5. Open Sine and start streaming! 🚀
+
+### Or Install via ADB:
+```bash
+adb install -r Sine-v1.0.6.apk
+```
 
 ---
 
@@ -323,6 +334,7 @@ Your compiled APK will be located at:
 
 ### Created & Developed By
 - **Muhammad Taezeem Tariq** ([@taezeem14](https://github.com/taezeem14)) — *Project Architect, Lead Developer & Mastermind* 🔥
+- UPI: `7006616470@fam`
 
 ### Special Thanks & Open Source Giants
 - **[Team NewPipe](https://github.com/TeamNewPipe/NewPipe)** — For pioneering private, tracker-free YouTube extraction.
