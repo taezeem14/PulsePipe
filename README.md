@@ -23,7 +23,7 @@
 
 <br/>
 
-### [👉 📲 DOWNLOAD LATEST APK (v1.0.5)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.5.apk) 👈
+### [👉 📲 DOWNLOAD LATEST APK (v1.0.6)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.6.apk) 👈
 
 *Tap above, download the APK, install, and elevate your earholes immediately.*
 
@@ -125,7 +125,7 @@ sequenceDiagram
 ```mermaid
 xychart-beta
     title "Cold-Start Track Playback Latency in Seconds (Lower is Better)"
-    x-axis ["Sine v1.0.4", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
+    x-axis ["Sine v1.0.6", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
     y-axis "Startup Latency (Seconds)" 0 --> 35
     bar [1.2, 8.5, 6.2, 28.0]
 ```
@@ -133,7 +133,7 @@ xychart-beta
 ```
 Playback Latency Comparison:
 ========================================================================
-Sine v1.0.4          [██] 1.2s (Hardware AAC DSP + itag 140 Prioritization)
+Sine v1.0.6          [██] 1.2s (Hardware AAC DSP + itag 140 Prioritization)
 Spotify Free         [████████] 8.5s (Audio Ad Insertion + DRM Handshake)
 YouTube Music        [██████] 6.2s (Video Ad Ingestion + Player Handshake)
 Generic Scrapers     [████████████████████████████] 28.0s (DASH 403 Retries)
@@ -222,9 +222,12 @@ stateDiagram-v2
 - You will literally never hear an ad. Ever.
 - Built-in **SponsorBlock** automatically detects and skips annoying podcast host sponsorships, intro skits, and outro sponsor plugs. It just stays on the music.
 
-### 🎚️ 5. Studio-Grade Hardware Multi-Band DSP Equalizer
+### 🎚️ 5. Studio-Grade Hardware Multi-Band DSP Equalizer + Sound Shaping
 - No artificial gain blowouts or ear-splitting volume glitches.
 - Pure Android hardware DSP multi-band EQ calibrated for pristine frequency response.
+- **Vocal & Instrument Filters**:
+  - 🎙️ `Vocals Only`: Accentuates human vocal frequencies while attenuating background instruments.
+  - 🎸 `Instruments Only`: Karaoke mode rolling off center vocal frequencies for instrumental enjoyment.
 - **Acoustic Presets**:
   - 📻 `Warm Tape` — Analog vintage saturation & tape warmth
   - ☕ `Lo-Fi` — Mid-focused nostalgic frequency roll-off
@@ -232,23 +235,33 @@ stateDiagram-v2
   - 🎙️ `Vocal Air` — High-shelf presence for crisp vocals
   - 🎸 `Acoustic` — Balanced natural instrument dynamics
   - 🎛️ `Flat` — Studio reference monitor profile
+- **Variable Playback Speed**: Smooth YouTube-style speed slider from 0.25x up to 2.0x.
 
 ### ♾️ 6. Infinite YouTube Mixes & Endless Queue
-- Put on any YouTube Mix or Radio (`list=RD...`, `list=RDMM...`) and Sine paginates deep into the algorithm, retrieving **150+ to 200+ tracks** on the fly.
-- Smart auto-advance ensures seamless track transitions with background stream prefetching.
+- Put on any YouTube Mix or Radio (`list=RD...`, `list=RDMM...`) and Sine paginates endlessly just like NewPipe.
+- Retrieves continuous 25-track batches on demand, expanding dynamically as you listen.
+- Auto-advance seamlessly prefetches the immediate next track for gapless transitions.
 
-### 🎤 7. Real-Time Synced Karaoke Lyrics
-- Live synchronized karaoke lyrics scrolling line-by-line as the artist sings.
+### 🎤 7. Centered Real-Time Synced Karaoke Lyrics
+- Live synchronized karaoke lyrics with smooth vertical auto-centering on the actively playing line.
+- Third-party uploader lyric support: Smart title and artist normalization pulls lyrics even for unofficial lyric videos or re-uploads.
 - Tap any line to seek directly to that part of the track.
 
-### 🎨 8. Electric Cyan & Obsidian Midnight Aesthetic
-- Built with a stunning Spotify-grade dark UI tailored for OLED screens.
-- Electric cyan and deep neon blue accents, smooth gesture sliders, dynamic album art glow, and buttery 120Hz animations.
+### 🎨 8. Electric Blue & Obsidian Midnight Aesthetic
+- Built with a stunning dark UI tailored for OLED screens.
+- Electric blue accents, smooth gesture sliders, dynamic album art glow, vinyl spinning disc animation, and buttery 120Hz transitions.
 
-### 📥 9. Offline Download Vault
-- Save any track directly to your device storage for offline plane rides, subway commutes, or gym sessions with zero Wi-Fi.
+### 📥 9. Offline Download Vault (Direct to `/storage/emulated/0/Sine-Music`)
+- Save any track or video directly into `/storage/emulated/0/Sine-Music` — right in the parent storage directory alongside `Android` and `DCIM`.
+- Zero confusing nested subfolders in `Android/data`.
+- Dynamic runtime permission handling on Android 9/10/11+ ensures files are saved directly to public storage.
+- Full offline playback integration with instant offline vault access.
 
-### 📱 10. Native Android Background Playback & Lock Screen
+### 💖 10. Direct Creator Support (UPI)
+- Built-in UPI donation tab in Settings supporting instant contributions to `7006616470@fam`.
+- Quick-tap contribution presets (₹50, ₹100, ₹250, ₹500, ₹1000) and scan-to-pay QR code generator.
+
+### 📱 11. Native Android Background Playback & Lock Screen
 - Fully integrated with Android `MediaSession` and `AudioService`.
 - Rich notification with album artwork, seekbar, next/previous buttons, and bluetooth headset integration with auto-pause on headphone unplug.
 
@@ -257,7 +270,7 @@ stateDiagram-v2
 ## ⚡ Installation (Super Easy)
 
 1. Head over to the **[Latest Releases](https://github.com/taezeem14/Sine/releases/latest)**.
-2. Download **`Sine-v1.0.4.apk`**.
+2. Download **`Sine-v1.0.6.apk`**.
 3. On your Android device, tap the downloaded APK.
 4. If prompted, toggle *"Allow install from unknown sources"* (it's open-source, safe, and completely transparent).
 5. Open Sine and start streaming! 🚀
@@ -272,7 +285,7 @@ Sine is engineered with modern Flutter & Dart architecture:
 - **Audio Engine**: [`just_audio`](https://pub.dev/packages/just_audio) + Android ExoPlayer 2 / Media3
 - **Extraction Protocol**: Tier-1 InnerTube Direct Stream Extractor + [Team NewPipe](https://github.com/TeamNewPipe/NewPipe) extraction logic + [`youtube_explode_dart`](https://pub.dev/packages/youtube_explode_dart) + High-Performance Piped & Invidious REST Proxy Failover
 - **Connection Optimization**: Persistent HTTP/2 keep-alive socket reuse & ExoPlayer aggressive low-latency buffer tuning (`bufferForPlaybackDuration = 400ms`)
-- **DSP Audio FX**: Android native hardware `AndroidEqualizer` multi-band filter chain
+- **DSP Audio FX**: Android native hardware `AndroidEqualizer` multi-band filter chain + Vocals / Instruments isolation filters
 - **Smart Metadata Cleaner**: Custom regex engine extracting true track titles & artist bylines from bloated YouTube video titles
 - **Sponsor Filtering**: Official [SponsorBlock API](https://sponsor.ajay.app/) integration
 - **State Management**: Reactive `Provider` pattern
@@ -302,7 +315,7 @@ flutter build apk --release --no-tree-shake-icons
 ```
 
 Your compiled APK will be located at:
-`build/app/outputs/flutter-apk/app-release.apk` (or `Sine-v1.0.4.apk`)
+`build/app/outputs/flutter-apk/app-release.apk` (or `Sine-v1.0.6.apk`)
 
 ---
 
@@ -315,7 +328,7 @@ Your compiled APK will be located at:
 - **[Team NewPipe](https://github.com/TeamNewPipe/NewPipe)** — For pioneering private, tracker-free YouTube extraction.
 - **[YoutubeExplode](https://github.com/Hexer10/YoutubeExplode)** — Exceptional Dart YouTube metadata parser.
 - **[Ryan Heise](https://github.com/ryanheise)** — Creator of `just_audio` and `audio_service`.
-- **[Ember Mobile](https://github.com/taezeem14/Ember)** — UI inspiration and acoustic design concepts.
+- **Open Source Audio Community** — Audio DSP filter design and acoustic engineering patterns.
 
 ---
 

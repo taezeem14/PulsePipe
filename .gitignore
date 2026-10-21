@@ -48,3 +48,5 @@ app.*.map.json
 /newpipe_repo/
 /lib_prev/
 *.apk
+
+/android/build/
