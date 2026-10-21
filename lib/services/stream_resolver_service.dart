@@ -10,7 +10,7 @@ class StreamResolverService {
   static final Map<String, Future<List<String>>> _inFlightResolutions = {};
 
   static void _cacheStreams(String key, List<String> streams) {
-    if (_resolvedCache.length >= _maxCacheEntries) {
+    if (!_resolvedCache.containsKey(key) && _resolvedCache.length >= _maxCacheEntries) {
       _resolvedCache.remove(_resolvedCache.keys.first);
     }
     _resolvedCache[key] = (streams: List<String>.from(streams), cachedAt: DateTime.now());
@@ -43,13 +43,14 @@ class StreamResolverService {
 
   /// Prefetch playable audio stream for a track in the background (WINDOW_SIZE = 1)
   static void prefetchPlayableStreams(Song song) {
-    if (isPreloaded(song) || _currentlyPreloading.contains(song.id)) return;
-    _currentlyPreloading.add(song.id);
+    final cacheKey = song.id.isNotEmpty ? song.id : song.streamUrl;
+    if (isPreloaded(song) || _currentlyPreloading.contains(cacheKey)) return;
+    _currentlyPreloading.add(cacheKey);
     resolvePlayableStreamCandidates(song).catchError((e) {
       debugPrint('[StreamResolverService] Prefetch background error for "${song.title}": $e');
       return <String>[];
     }).whenComplete(() {
-      _currentlyPreloading.remove(song.id);
+      _currentlyPreloading.remove(cacheKey);
     });
   }
 
@@ -65,7 +66,8 @@ class StreamResolverService {
   static void preloadSongs(List<Song> songs, {int maxCount = 1}) {
     if (songs.isEmpty) return;
     for (final song in songs) {
-      if (!isPreloaded(song) && !_currentlyPreloading.contains(song.id)) {
+      final key = song.id.isNotEmpty ? song.id : song.streamUrl;
+      if (!isPreloaded(song) && !_currentlyPreloading.contains(key)) {
         preloadNextSong(song);
         break;
       }
@@ -110,7 +112,8 @@ class StreamResolverService {
       return _inFlightResolutions[cacheKey]!;
     }
 
-    final future = _resolveCandidatesInternal(song, cacheKey);
+    final future = _resolveCandidatesInternal(song, cacheKey)
+        .timeout(const Duration(seconds: 15), onTimeout: () => <String>[]);
     _inFlightResolutions[cacheKey] = future;
     return future.whenComplete(() {
       _inFlightResolutions.remove(cacheKey);
@@ -125,7 +128,16 @@ class StreamResolverService {
         s.startsWith('file://') ||
         RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(s);
     if (s.isNotEmpty && isLocal) {
-      var checkPath = s.replaceFirst('file://', '');
+      String checkPath;
+      if (s.startsWith('file://')) {
+        try {
+          checkPath = Uri.parse(s).toFilePath(windows: Platform.isWindows);
+        } catch (_) {
+          checkPath = Uri.decodeFull(s.replaceFirst('file://', ''));
+        }
+      } else {
+        checkPath = Uri.decodeFull(s);
+      }
       if (Platform.isWindows && checkPath.startsWith('/') && checkPath.length > 2 && checkPath[2] == ':') {
         checkPath = checkPath.substring(1);
       }
@@ -137,7 +149,19 @@ class StreamResolverService {
       }
     }
 
-    // 2. Extract YouTube video ID
+    // 2. Direct HTTP/HTTPS audio streams (non-YouTube web pages)
+    if (s.startsWith('http://') || s.startsWith('https://')) {
+      final uri = Uri.tryParse(s);
+      final host = uri?.host.toLowerCase() ?? '';
+      final isYouTubeUrl = host.contains('youtube.com') || host.contains('youtu.be');
+      if (!isYouTubeUrl && (s.contains('.mp3') || s.contains('.m4a') || s.contains('.aac') || s.contains('.opus') || s.contains('.ogg') || s.contains('.webm') || s.contains('.flac') || s.contains('googlevideo.com'))) {
+        LogService.stream('StreamResolver', 'Direct external audio stream URL detected: $s');
+        _cacheStreams(cacheKey, [s]);
+        return [s];
+      }
+    }
+
+    // 3. Extract YouTube video ID
     String? videoId;
     if (song.id.startsWith('yt_')) {
       videoId = song.id.replaceFirst('yt_', '').trim();
@@ -145,7 +169,7 @@ class StreamResolverService {
       videoId = YouTubeImporterService.extractVideoId(s);
     }
 
-    // 3. If videoId found, extract direct YouTube audio streams
+    // 4. If videoId found, extract direct YouTube audio streams
     if (videoId != null && videoId.isNotEmpty) {
       try {
         LogService.stream('StreamResolver', 'Resolving direct YouTube streams for $videoId ("${song.title}")...');
@@ -163,11 +187,14 @@ class StreamResolverService {
       }
     }
 
-    // 4. If no direct videoId, search YouTube dynamically by title + artist
+    // 5. If no direct videoId, search YouTube dynamically by title + artist
     try {
       final cleanT = cleanTitle(song.title);
       final cleanA = song.artist != 'Unknown Artist' && song.artist.isNotEmpty ? song.artist.trim() : '';
-      final query = cleanA.isNotEmpty ? '$cleanT $cleanA' : cleanT;
+      var query = cleanA.isNotEmpty ? '$cleanT $cleanA' : cleanT;
+      if (query.trim().isEmpty) {
+        query = song.title.trim().isNotEmpty ? song.title.trim() : 'music';
+      }
       LogService.stream('StreamResolver', 'Searching YouTube dynamically for "$query"...');
       debugPrint('[NewPipe Engine] Searching YouTube for "$query"...');
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
@@ -34,17 +35,31 @@ class StorageService {
   final List<Song> _memDownloads = [];
   double _memSpeed = 1.0;
 
+  static String? _safeJsonEncode(Map<String, dynamic> map) {
+    try {
+      return jsonEncode(map);
+    } catch (e) {
+      return null;
+    }
+  }
+
   StorageService(this._prefs);
 
   static Future<StorageService> init() async {
+    SharedPreferences? prefs;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final service = StorageService(prefs);
-      await service.purgeAllPlaceholders();
-      return service;
+      prefs = await SharedPreferences.getInstance();
     } catch (e) {
-      return StorageService(null);
+      debugPrint('[StorageService] SharedPreferences.getInstance failed: $e');
     }
+
+    final service = StorageService(prefs);
+    try {
+      await service.purgeAllPlaceholders();
+    } catch (e) {
+      debugPrint('[StorageService] Error purging placeholders (non-fatal): $e');
+    }
+    return service;
   }
 
   /// Purges all legacy mock / placeholder songs from all storage keys permanently
@@ -64,28 +79,32 @@ class StorageService {
 
   List<Song> loadFavorites() {
     if (_prefs == null) {
-      return List.unmodifiable(_memFavorites.where((s) => !Song.isPlaceholder(s)));
+      return List<Song>.from(_memFavorites.where((s) => !Song.isPlaceholder(s)));
     }
     final raw = _prefs.getStringList(_favsKey) ?? _prefs.getStringList(_favsLegacyKey) ?? [];
-    final cleaned = raw
-        .map((s) {
-          try {
-            final decoded = jsonDecode(s);
-            if (decoded is! Map) return null;
-            final song = Song.fromMap(Map<String, dynamic>.from(decoded));
-            return Song.isPlaceholder(song) ? null : song;
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<Song>()
-        .toList();
+    final cleaned = <Song>[];
+    bool hadPlaceholders = false;
+
+    for (final s in raw) {
+      try {
+        final decoded = jsonDecode(s);
+        if (decoded is! Map) continue;
+        final song = Song.fromMap(Map<String, dynamic>.from(decoded));
+        if (Song.isPlaceholder(song)) {
+          hadPlaceholders = true;
+        } else {
+          cleaned.add(song);
+        }
+      } catch (e) {
+        debugPrint('[StorageService] Skipped corrupt favorite entry: $e');
+      }
+    }
 
     _memFavorites.clear();
     _memFavorites.addAll(cleaned);
 
-    if (raw.length != cleaned.length) {
-      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+    if (hadPlaceholders) {
+      final encoded = cleaned.map((s) => _safeJsonEncode(s.toMap())).whereType<String>().toList();
       _prefs.setStringList(_favsKey, encoded);
     }
 
@@ -97,35 +116,39 @@ class StorageService {
     _memFavorites.clear();
     _memFavorites.addAll(cleaned);
     if (_prefs != null) {
-      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+      final encoded = cleaned.map((s) => _safeJsonEncode(s.toMap())).whereType<String>().toList();
       await _prefs.setStringList(_favsKey, encoded);
     }
   }
 
   List<Song> loadHistory() {
     if (_prefs == null) {
-      return List.unmodifiable(_memHistory.where((s) => !Song.isPlaceholder(s)));
+      return List<Song>.from(_memHistory.where((s) => !Song.isPlaceholder(s)));
     }
     final raw = _prefs.getStringList(_histKey) ?? _prefs.getStringList(_histLegacyKey) ?? [];
-    final cleaned = raw
-        .map((s) {
-          try {
-            final decoded = jsonDecode(s);
-            if (decoded is! Map) return null;
-            final song = Song.fromMap(Map<String, dynamic>.from(decoded));
-            return Song.isPlaceholder(song) ? null : song;
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<Song>()
-        .toList();
+    final cleaned = <Song>[];
+    bool hadPlaceholders = false;
+
+    for (final s in raw) {
+      try {
+        final decoded = jsonDecode(s);
+        if (decoded is! Map) continue;
+        final song = Song.fromMap(Map<String, dynamic>.from(decoded));
+        if (Song.isPlaceholder(song)) {
+          hadPlaceholders = true;
+        } else {
+          cleaned.add(song);
+        }
+      } catch (e) {
+        debugPrint('[StorageService] Skipped corrupt history entry: $e');
+      }
+    }
 
     _memHistory.clear();
     _memHistory.addAll(cleaned);
 
-    if (raw.length != cleaned.length) {
-      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+    if (hadPlaceholders) {
+      final encoded = cleaned.map((s) => _safeJsonEncode(s.toMap())).whereType<String>().toList();
       _prefs.setStringList(_histKey, encoded);
     }
 
@@ -137,7 +160,7 @@ class StorageService {
     _memHistory.clear();
     _memHistory.addAll(cleaned);
     if (_prefs != null) {
-      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+      final encoded = cleaned.map((s) => _safeJsonEncode(s.toMap())).whereType<String>().toList();
       await _prefs.setStringList(_histKey, encoded);
     }
   }
@@ -168,11 +191,6 @@ class StorageService {
     _memPlaylists.clear();
     _memPlaylists.addAll(list);
 
-    if (raw.length != list.length) {
-      final encoded = list.map((p) => jsonEncode(p.toMap())).toList();
-      _prefs.setStringList(_playlistsKey, encoded);
-    }
-
     return list;
   }
 
@@ -180,7 +198,7 @@ class StorageService {
     _memPlaylists.clear();
     _memPlaylists.addAll(playlists);
     if (_prefs != null) {
-      final encoded = playlists.map((p) => jsonEncode(p.toMap())).toList();
+      final encoded = playlists.map((p) => _safeJsonEncode(p.toMap())).whereType<String>().toList();
       await _prefs.setStringList(_playlistsKey, encoded);
     }
   }
@@ -212,7 +230,9 @@ class StorageService {
         final updatedSongs = List<Song>.from(existing.songs)..add(song);
         final updated = existing.copyWith(
           songs: updatedSongs,
-          coverUrl: existing.coverUrl ?? (song.artworkUrl.isNotEmpty ? song.artworkUrl : null),
+          coverUrl: existing.coverUrl?.isNotEmpty == true
+              ? existing.coverUrl
+              : (song.artworkUrl.isNotEmpty ? song.artworkUrl : null),
         );
         list[idx] = updated;
         await savePlaylists(list);
@@ -225,25 +245,29 @@ class StorageService {
       return List<Song>.from(_memDownloads.where((s) => !Song.isPlaceholder(s)));
     }
     final raw = _prefs.getStringList(_downloadsKey) ?? _prefs.getStringList(_downloadsLegacyKey) ?? [];
-    final cleaned = raw
-        .map((s) {
-          try {
-            final decoded = jsonDecode(s);
-            if (decoded is! Map) return null;
-            final song = Song.fromMap(Map<String, dynamic>.from(decoded));
-            return Song.isPlaceholder(song) ? null : song;
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<Song>()
-        .toList();
+    final cleaned = <Song>[];
+    bool hadPlaceholders = false;
+
+    for (final s in raw) {
+      try {
+        final decoded = jsonDecode(s);
+        if (decoded is! Map) continue;
+        final song = Song.fromMap(Map<String, dynamic>.from(decoded));
+        if (Song.isPlaceholder(song)) {
+          hadPlaceholders = true;
+        } else {
+          cleaned.add(song);
+        }
+      } catch (e) {
+        debugPrint('[StorageService] Skipped corrupt download entry: $e');
+      }
+    }
 
     _memDownloads.clear();
     _memDownloads.addAll(cleaned);
 
-    if (raw.length != cleaned.length) {
-      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+    if (hadPlaceholders) {
+      final encoded = cleaned.map((s) => _safeJsonEncode(s.toMap())).whereType<String>().toList();
       _prefs.setStringList(_downloadsKey, encoded);
     }
 
@@ -255,7 +279,7 @@ class StorageService {
     _memDownloads.clear();
     _memDownloads.addAll(cleaned);
     if (_prefs != null) {
-      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+      final encoded = cleaned.map((s) => _safeJsonEncode(s.toMap())).whereType<String>().toList();
       await _prefs.setStringList(_downloadsKey, encoded);
     }
   }
@@ -315,7 +339,15 @@ class StorageService {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is Map) {
-        return decoded.map((k, v) => MapEntry(int.parse(k.toString()), (v as num).toDouble()));
+        final result = <int, double>{};
+        for (final entry in decoded.entries) {
+          final k = int.tryParse(entry.key.toString());
+          final v = (entry.value as num?)?.toDouble();
+          if (k != null && v != null) {
+            result[k] = v;
+          }
+        }
+        return result;
       }
       return {};
     } catch (_) {

@@ -67,11 +67,11 @@ class Song {
 
   factory Song.fromMap(Map<String, dynamic> map) {
     final rawId = map['id']?.toString() ?? '';
-    final rawStream = map['stream_url']?.toString() ?? '';
-    final explicitSource = map['source']?.toString();
+    final rawStream = (map['stream_url'] ?? map['streamUrl'])?.toString() ?? '';
+    final explicitSource = (map['source'] ?? map['sourceType'])?.toString();
     final inferredSource = (explicitSource != null && explicitSource.isNotEmpty) ? explicitSource : 'youtube';
 
-    final durationVal = map['duration_ms'];
+    final durationVal = map['duration_ms'] ?? map['durationMs'];
     final int durationMs;
     if (durationVal is num) {
       durationMs = durationVal.toInt();
@@ -81,7 +81,7 @@ class Song {
       durationMs = 0;
     }
 
-    final favVal = map['is_favorite'];
+    final favVal = map['is_favorite'] ?? map['isFavorite'];
     final bool isFav = favVal is bool
         ? favVal
         : (favVal == 1 || favVal == '1' || favVal == 'true');
@@ -90,8 +90,8 @@ class Song {
       id: rawId,
       title: map['title']?.toString() ?? 'Unknown Title',
       artist: map['artist']?.toString() ?? 'Unknown Artist',
-      duration: Duration(milliseconds: durationMs),
-      artworkUrl: map['artwork_url']?.toString() ?? '',
+      duration: Duration(milliseconds: durationMs.clamp(0, 86400000)),
+      artworkUrl: (map['artwork_url'] ?? map['artworkUrl'])?.toString() ?? '',
       streamUrl: rawStream,
       lyrics: map['lyrics']?.toString(),
       isFavorite: isFav,

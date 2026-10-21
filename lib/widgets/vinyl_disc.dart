@@ -35,14 +35,21 @@ class _VinylDiscState extends State<VinylDisc>
   @override
   void didUpdateWidget(covariant VinylDisc oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!widget.isPlaying && _controller.isAnimating) {
-      _controller.animateTo(
-        (_controller.value + 0.05) % 1.0,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.decelerate,
-      );
+    if (oldWidget.isPlaying != widget.isPlaying) {
+      if (widget.isPlaying) {
+        _controller.repeat();
+      } else {
+        final target = _controller.value + 0.05;
+        if (target <= 1.0) {
+          _controller.animateTo(
+            target,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.decelerate,
+          );
+        } else {
+          _controller.stop();
+        }
+      }
     }
   }
 

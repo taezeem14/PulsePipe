@@ -386,11 +386,14 @@ class YouTubeImporterService {
             final trackTitle = _extractText(renderer['title']) ?? 'YouTube Track';
             final trackAuthor = _extractText(renderer['shortBylineText']) ?? 'YouTube Artist';
             final meta = parseYouTubeMetadata(trackTitle, trackAuthor);
-            final durText = renderer['lengthText']?['simpleText'] as String?;
+            final durText = _extractText(renderer['lengthText']);
             final thumbs = renderer['thumbnail']?['thumbnails'] as List?;
-            final art = (thumbs != null && thumbs.isNotEmpty)
-                ? thumbs.last['url'] as String? ?? 'https://i.ytimg.com/vi/$vId/hqdefault.jpg'
+            var art = (thumbs != null && thumbs.isNotEmpty)
+                ? (thumbs.last['url'] as String? ?? 'https://i.ytimg.com/vi/$vId/hqdefault.jpg')
                 : 'https://i.ytimg.com/vi/$vId/hqdefault.jpg';
+            if (art.startsWith('//')) {
+              art = 'https:$art';
+            }
 
             songs.add(
               Song(
@@ -441,6 +444,9 @@ class YouTubeImporterService {
       String title = 'YouTube Mix';
       String author = 'YouTube Mix';
       String? currentVideoId = videoId;
+      if (currentVideoId == null && playlistId.startsWith('RD') && playlistId.length >= 13) {
+        currentVideoId = playlistId.substring(2, 13);
+      }
       String? currentParams;
       String? continuationToken;
 
@@ -454,18 +460,24 @@ class YouTubeImporterService {
           seenIds: seenIds,
         );
 
-        if (result == null || result.songs.isEmpty) break;
+        if (result == null) break;
 
-        if (page == 0) {
+        if (result.continuationToken != null) continuationToken = result.continuationToken;
+        if (result.nextVideoId != null) currentVideoId = result.nextVideoId;
+        if (result.nextParams != null) currentParams = result.nextParams;
+
+        if (result.songs.isEmpty) {
+          if (continuationToken == null && currentVideoId == null) break;
+          continue;
+        }
+
+        if (page == 0 && songs.isEmpty) {
           final first = result.songs.first;
           title = 'Mix - ${first.title}';
           author = first.artist;
         }
 
         songs.addAll(result.songs);
-        continuationToken = result.continuationToken;
-        if (result.nextVideoId != null) currentVideoId = result.nextVideoId;
-        if (result.nextParams != null) currentParams = result.nextParams;
 
         if (continuationToken == null && currentVideoId == null) break;
       }

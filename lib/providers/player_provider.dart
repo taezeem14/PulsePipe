@@ -293,6 +293,14 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _handleSongCompleted() async {
+    // 1. Single track loop mode: seek to start and replay instantly
+    if (_repeatMode == 'one') {
+      _consecutiveStreamFailures = 0;
+      await _audioHandler.seek(Duration.zero);
+      await _audioHandler.play();
+      return;
+    }
+
     // Guard against premature / corrupted completions
     if (_position.inSeconds < 5 && _duration.inSeconds > 15) {
       _consecutiveStreamFailures++;
@@ -306,13 +314,6 @@ class PlayerProvider extends ChangeNotifier {
       }
     } else {
       _consecutiveStreamFailures = 0;
-    }
-
-    // 1. Single track loop mode: seek to start and replay instantly
-    if (_repeatMode == 'one') {
-      await _audioHandler.seek(Duration.zero);
-      await _audioHandler.play();
-      return;
     }
 
     // 2. Advance to next track in active queue
@@ -373,17 +374,19 @@ class PlayerProvider extends ChangeNotifier {
           currentParams: _mixLastParams,
           seenIds: _mixSeenVideoIds,
         );
-        if (result != null && result.songs.isNotEmpty) {
-          _mixContinuationToken = result.continuationToken;
+        if (result != null) {
+          if (result.continuationToken != null) _mixContinuationToken = result.continuationToken;
           if (result.nextVideoId != null) _mixLastVideoId = result.nextVideoId;
           if (result.nextParams != null) _mixLastParams = result.nextParams;
 
-          _queue.addAll(result.songs);
-          if (_isShuffle) {
-            _unshuffledQueue.addAll(result.songs);
+          if (result.songs.isNotEmpty) {
+            _queue.addAll(result.songs);
+            if (_isShuffle) {
+              _unshuffledQueue.addAll(result.songs);
+            }
+            notifyListeners();
+            debugPrint('[PlayerProvider] Infinitely appended ${result.songs.length} new mix tracks. Total in queue: ${_queue.length}');
           }
-          notifyListeners();
-          debugPrint('[PlayerProvider] Infinitely appended ${result.songs.length} new mix tracks. Total in queue: ${_queue.length}');
         }
       } catch (e) {
         debugPrint('[PlayerProvider] Error fetching next mix batch: $e');
@@ -952,6 +955,8 @@ class PlayerProvider extends ChangeNotifier {
         _isMixActive = true;
         _activeMixPlaylistId = playlist.id.replaceFirst('yt_mix_', '');
         _mixContinuationToken = playlist.continuationToken;
+        _mixLastVideoId = playlist.songs.isNotEmpty ? playlist.songs.last.id.replaceFirst('yt_', '') : null;
+        _mixLastParams = null;
         _mixSeenVideoIds.clear();
         _mixSeenVideoIds.addAll(playlist.songs.map((s) => s.id.replaceFirst('yt_', '')));
         _playingFrom = 'YouTube Mix: ${playlist.title}';

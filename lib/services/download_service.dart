@@ -64,26 +64,35 @@ class DownloadService {
 
   /// Locate or create appropriate public/accessible media directory cross-platform
   static Future<Directory> _getMediaDirectory({bool isVideo = false}) async {
+    final subFolder = isVideo ? 'Sine-Videos' : 'Sine-Music';
     if (Platform.isAndroid) {
-      // 1. Primary target requested: /storage/emulated/0/Sine-Music (same parent as Android and DCIM)
-      try {
-        final rootDir = Directory('/storage/emulated/0/Sine-Music');
-        if (!await rootDir.exists()) {
-          await rootDir.create(recursive: true);
-        }
-        return rootDir;
-      } catch (e) {
-        debugPrint('[DownloadService] Direct /storage/emulated/0/Sine-Music access notice: $e');
+      // 1. Try public storage targets (Direct /storage/emulated/0, Music/Movies, Download)
+      final candidates = <String>[
+        '/storage/emulated/0/$subFolder',
+        if (isVideo) '/storage/emulated/0/Movies/$subFolder' else '/storage/emulated/0/Music/$subFolder',
+        '/storage/emulated/0/Download/$subFolder',
+      ];
+
+      for (final p in candidates) {
+        try {
+          final dir = Directory(p);
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          // Verify writeability with a dummy probe file
+          final probe = File('${dir.path}/.probe_${DateTime.now().millisecondsSinceEpoch}');
+          await probe.writeAsString('test');
+          await probe.delete();
+          return dir;
+        } catch (_) {}
       }
 
-      // 2. Derive root directory by stripping /Android from getExternalStorageDirectory()
+      // 2. Fallback to app-specific external storage (never requires runtime permissions on Android)
       try {
-        final ext = await getExternalStorageDirectory();
-        if (ext != null) {
-          final path = ext.path;
-          final androidIdx = path.indexOf('/Android');
-          final rootPath = androidIdx != -1 ? path.substring(0, androidIdx) : path;
-          final dir = Directory('$rootPath/Sine-Music');
+        final storageType = isVideo ? StorageDirectory.movies : StorageDirectory.music;
+        final extDirs = await getExternalStorageDirectories(type: storageType);
+        if (extDirs != null && extDirs.isNotEmpty) {
+          final dir = Directory('${extDirs.first.path}/$subFolder');
           if (!await dir.exists()) {
             await dir.create(recursive: true);
           }
@@ -91,28 +100,21 @@ class DownloadService {
         }
       } catch (_) {}
 
-      // 3. Fallback to standard Music directory on primary external storage
       try {
-        final musicDir = Directory('/storage/emulated/0/Music/Sine-Music');
-        if (!await musicDir.exists()) {
-          await musicDir.create(recursive: true);
+        final ext = await getExternalStorageDirectory();
+        if (ext != null) {
+          final dir = Directory('${ext.path}/$subFolder');
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return dir;
         }
-        return musicDir;
-      } catch (_) {}
-
-      // 4. Fallback to standard Download directory on primary external storage
-      try {
-        final dlDir = Directory('/storage/emulated/0/Download/Sine-Music');
-        if (!await dlDir.exists()) {
-          await dlDir.create(recursive: true);
-        }
-        return dlDir;
       } catch (_) {}
     } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       try {
         final downloads = await getDownloadsDirectory();
         if (downloads != null) {
-          final dir = Directory('${downloads.path}/Sine-Music');
+          final dir = Directory('${downloads.path}/$subFolder');
           if (!await dir.exists()) {
             await dir.create(recursive: true);
           }
@@ -122,11 +124,24 @@ class DownloadService {
     }
 
     final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory('${docs.path}/Sine-Music');
+    final dir = Directory('${docs.path}/$subFolder');
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
     return dir;
+  }
+
+  /// Robust file move with atomic rename & cross-filesystem copy fallback
+  static Future<void> _safeMoveFile(File source, File target) async {
+    if (await target.exists()) {
+      try { await target.delete(); } catch (_) {}
+    }
+    try {
+      await source.rename(target.path);
+    } catch (_) {
+      await source.copy(target.path);
+      try { await source.delete(); } catch (_) {}
+    }
   }
 
   /// Resolve any song to a valid YouTube Video ID
@@ -199,10 +214,14 @@ class DownloadService {
       await output.close();
       output = null;
 
-      if (await targetFile.exists()) {
-        try { await targetFile.delete(); } catch (_) {}
+      if (total > 0 && received < total) {
+        throw Exception('Truncated download: received $received of $total bytes');
       }
-      await partFile.rename(targetFile.path);
+      if (received == 0) {
+        throw Exception('Download failed: 0 bytes received');
+      }
+
+      await _safeMoveFile(partFile, targetFile);
       return true;
     } catch (e) {
       try { await output?.close(); } catch (_) {}
@@ -239,16 +258,19 @@ class DownloadService {
     final safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
     final safeId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
     final targetM4a = File('${dir.path}/${safeBase}_$safeId.m4a');
+    final targetWebm = File('${dir.path}/${safeBase}_$safeId.webm');
 
-    if (await targetM4a.exists() && await targetM4a.length() > 0) {
-      _activeDownloads[songId] = DownloadProgress(
-        songId: songId,
-        progress: 1.0,
-        isCompleted: true,
-        localFilePath: targetM4a.path,
-      );
-      _progressController.add(_activeDownloads[songId]!);
-      return targetM4a.path;
+    for (final f in [targetM4a, targetWebm]) {
+      if (await f.exists() && await f.length() > 0) {
+        _activeDownloads[songId] = DownloadProgress(
+          songId: songId,
+          progress: 1.0,
+          isCompleted: true,
+          localFilePath: f.path,
+        );
+        _progressController.add(_activeDownloads[songId]!);
+        return f.path;
+      }
     }
 
     _activeDownloads[songId] = DownloadProgress(songId: songId, progress: 0.0);
@@ -328,10 +350,14 @@ class DownloadService {
               await output.close();
               output = null;
 
-              if (await file.exists()) {
-                try { await file.delete(); } catch (_) {}
+              if (total > 0 && received < total) {
+                throw Exception('Audio stream truncated: received $received of $total bytes');
               }
-              await partFile.rename(file.path);
+              if (received == 0) {
+                throw Exception('Audio stream failed: 0 bytes received');
+              }
+
+              await _safeMoveFile(partFile, file);
               completedFile = file;
             } catch (e) {
               try { await output?.close(); } catch (_) {}
@@ -409,18 +435,21 @@ class DownloadService {
     final safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
     final safeId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
     final targetMp4 = File('${dir.path}/${safeBase}_$safeId.mp4');
+    final targetWebm = File('${dir.path}/${safeBase}_$safeId.webm');
 
     // Return immediately if already downloaded and exists on disk
-    if (await targetMp4.exists() && await targetMp4.length() > 0) {
-      _activeDownloads[videoIdKey] = DownloadProgress(
-        songId: videoIdKey,
-        progress: 1.0,
-        isCompleted: true,
-        localFilePath: targetMp4.path,
-        isVideo: true,
-      );
-      _progressController.add(_activeDownloads[videoIdKey]!);
-      return targetMp4.path;
+    for (final f in [targetMp4, targetWebm]) {
+      if (await f.exists() && await f.length() > 0) {
+        _activeDownloads[videoIdKey] = DownloadProgress(
+          songId: videoIdKey,
+          progress: 1.0,
+          isCompleted: true,
+          localFilePath: f.path,
+          isVideo: true,
+        );
+        _progressController.add(_activeDownloads[videoIdKey]!);
+        return f.path;
+      }
     }
 
     _activeDownloads[videoIdKey] = DownloadProgress(songId: videoIdKey, progress: 0.0, isVideo: true);
@@ -541,10 +570,14 @@ class DownloadService {
               await output.close();
               output = null;
 
-              if (await file.exists()) {
-                try { await file.delete(); } catch (_) {}
+              if (total > 0 && received < total) {
+                throw Exception('Audio stream truncated: received $received of $total bytes');
               }
-              await partFile.rename(file.path);
+              if (received == 0) {
+                throw Exception('Audio stream failed: 0 bytes received');
+              }
+
+              await _safeMoveFile(partFile, file);
               completedFile = file;
             } catch (e) {
               try { await output?.close(); } catch (_) {}

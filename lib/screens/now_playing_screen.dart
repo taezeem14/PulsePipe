@@ -437,16 +437,18 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                     // Playback Speed (YouTube-style Sheet with fine-tuning slider)
                     _PillAction(
                       icon: FontAwesomeIcons.gaugeHigh,
-                      label: '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 1 : 2)}x',
-                      active: player.speed != 1.0,
+                      label: '${(player.speed * 10).round() == player.speed * 10 ? player.speed.toStringAsFixed(1) : player.speed.toStringAsFixed(2)}x',
+                      active: (player.speed - 1.0).abs() > 0.01,
                       onTap: () => PlaybackSpeedSheet.show(context),
                     ),
                     const SizedBox(width: 8),
                     // Queue Screen
                     _PillAction(
                       icon: FontAwesomeIcons.listUl,
-                      label: 'Queue',
-                      active: false,
+                      label: player.queue.isNotEmpty
+                          ? 'Queue (${player.currentIndex + 1}/${player.queue.length})'
+                          : 'Queue',
+                      active: player.queue.length > 1,
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const QueueDiscoveryScreen()),
                       ),

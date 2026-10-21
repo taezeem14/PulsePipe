@@ -55,10 +55,12 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool _currentTrackActive = false;
   bool _wasPlayingBeforeInterrupt = false;
   double _preDuckVolume = 1.0;
+  bool _isDucked = false;
 
   bool _eqEnabled = false;
   double _bassBoost = 0.0;
   String _currentPreset = 'Flat';
+  final Map<int, double> _customBandGains = {};
 
   List<SponsorSegment> _activeSponsorSegments = [];
   final Set<String> _skippedSegmentKeys = {};
@@ -138,7 +140,10 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           _wasPlayingBeforeInterrupt = _player.playing;
           switch (event.type) {
             case AudioInterruptionType.duck:
-              _preDuckVolume = _player.volume;
+              if (!_isDucked) {
+                _preDuckVolume = _player.volume;
+                _isDucked = true;
+              }
               _player.setVolume(0.35);
               break;
             case AudioInterruptionType.pause:
@@ -150,6 +155,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           switch (event.type) {
             case AudioInterruptionType.duck:
               _player.setVolume(_preDuckVolume);
+              _isDucked = false;
               break;
             case AudioInterruptionType.pause:
               if (_wasPlayingBeforeInterrupt) play();
@@ -227,6 +233,9 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       },
       onError: (Object e, StackTrace st) {
         LogService.w('AudioHandler', 'playbackEventStream error: $e');
+        if (_currentTrackActive && _currentSong != null && !_isReconnecting) {
+          _handleMidStreamNetworkDrop();
+        }
       },
     );
 
@@ -255,10 +264,10 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           final total = _player.duration;
           final pos = _player.position;
           // Verify track genuinely played near completion (> 85% or within 4s of end)
-          // If total is null or <= 5 seconds, or pos is far from end, this is a premature network disconnect or socket EOF!
+          // Also handle short tracks (<= 5 seconds) cleanly
           final isNearEnd = total != null &&
-              total.inSeconds > 5 &&
-              (pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85));
+              ((total.inSeconds <= 5 && total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.75) ||
+               (total.inSeconds > 5 && (pos.inSeconds >= (total.inSeconds - 4) || (total.inMilliseconds > 0 && (pos.inMilliseconds / total.inMilliseconds) >= 0.85))));
 
           if (!isNearEnd) {
             debugPrint('[AudioHandler] Premature completion event detected (pos: ${pos.inSeconds}s, total: ${total?.inSeconds}s). Attempting auto-reconnect...');
@@ -277,6 +286,9 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       },
       onError: (Object e, StackTrace st) {
         LogService.w('AudioHandler', 'playerStateStream error: $e');
+        if (_currentTrackActive && _currentSong != null && !_isReconnecting) {
+          _handleMidStreamNetworkDrop();
+        }
       },
     );
 
@@ -311,7 +323,9 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
               debugPrint('SponsorBlock: auto-skipping ${segment.category} [${segment.start}s - ${segment.end}s] to ${safeTarget.inMilliseconds}ms');
 
-              _player.seek(safeTarget).whenComplete(() {
+              _player.seek(safeTarget).catchError((e) {
+                debugPrint('SponsorBlock seek error: $e');
+              }).whenComplete(() {
                 _isSkippingSponsor = false;
               });
               break;
@@ -385,6 +399,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           ).timeout(const Duration(seconds: 12));
 
           await _player.play();
+          await _restorePlaybackParameters();
           reconnected = true;
           _isReconnecting = false;
           _consecutiveReconnectAttempts = 0;
@@ -414,6 +429,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             ).timeout(const Duration(seconds: 7));
 
             await _player.play();
+            await _restorePlaybackParameters();
             _isReconnecting = false;
             _consecutiveReconnectAttempts = 0;
             _currentTrackActive = true;
@@ -434,6 +450,12 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _currentTrackActive = false;
       _completionHandled = true;
       _consecutiveReconnectAttempts = 0;
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.idle,
+          playing: false,
+        ),
+      );
       _onPlaybackFailed?.call(targetSong);
     }
   }
@@ -716,6 +738,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   Future<void> setBandGain(int bandIndex, double gain) async {
+    _customBandGains[bandIndex] = gain;
     try {
       final params = await _equalizer.parameters;
       if (bandIndex >= 0 && bandIndex < params.bands.length) {
@@ -742,6 +765,18 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final lowMidAdd = _bassBoost * 1.5;
 
       switch (preset) {
+        case 'Custom':
+          for (int i = 0; i < n; i++) {
+            final baseGain = _customBandGains[i] ?? 0.0;
+            if (i == 0) {
+              await bands[i].setGain(clampGain(baseGain + bassAdd));
+            } else if (i == 1) {
+              await bands[i].setGain(clampGain(baseGain + lowMidAdd));
+            } else {
+              await bands[i].setGain(clampGain(baseGain));
+            }
+          }
+          break;
         case 'Warm Tape':
           // Subtle analog warmth: smooth low-end, neutral mids, soft treble roll-off
           for (int i = 0; i < n; i++) {
@@ -991,6 +1026,9 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         await _player.setLoopMode(LoopMode.one);
       } else {
         await _player.setLoopMode(LoopMode.off);
+      }
+      if (_eqEnabled) {
+        await applyEqualizerPreset(_currentPreset);
       }
     } catch (_) {}
   }

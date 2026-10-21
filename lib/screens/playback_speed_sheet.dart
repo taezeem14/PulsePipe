@@ -60,43 +60,52 @@ class PlaybackSpeedSheet extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: EmberColors.primaryAmber.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const FaIcon(
-                        FontAwesomeIcons.gaugeHigh,
-                        size: 16,
-                        color: EmberColors.primaryAmber,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Playback Speed',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: EmberColors.textPrimary,
-                                fontWeight: FontWeight.bold,
-                              ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: EmberColors.primaryAmber.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
                         ),
-                        Text(
-                          'YouTube-style speed control with DSP pitch preservation',
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: EmberColors.textMuted,
-                              ),
+                        child: const FaIcon(
+                          FontAwesomeIcons.gaugeHigh,
+                          size: 16,
+                          color: EmberColors.primaryAmber,
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Playback Speed',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: EmberColors.textPrimary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                            Text(
+                              'YouTube-style speed control with DSP pitch preservation',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: EmberColors.textMuted,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 TextButton(
-                  onPressed: currentSpeed == 1.0 ? null : () => player.setSpeed(1.0),
+                  onPressed: (currentSpeed - 1.0).abs() < 0.01 ? null : () => player.setSpeed(1.0),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     minimumSize: Size.zero,
@@ -105,7 +114,7 @@ class PlaybackSpeedSheet extends StatelessWidget {
                   child: Text(
                     'Normal (1.0x)',
                     style: TextStyle(
-                      color: currentSpeed == 1.0 ? EmberColors.textMuted : EmberColors.primaryAmber,
+                      color: (currentSpeed - 1.0).abs() < 0.01 ? EmberColors.textMuted : EmberColors.primaryAmber,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -123,15 +132,15 @@ class PlaybackSpeedSheet extends StatelessWidget {
                   color: EmberColors.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: currentSpeed != 1.0
+                    color: (currentSpeed - 1.0).abs() > 0.01
                         ? EmberColors.primaryAmber.withValues(alpha: 0.4)
                         : EmberColors.outlineVariant.withValues(alpha: 0.4),
                   ),
                 ),
                 child: Text(
-                  currentSpeed == 1.0 ? '1.0x • Normal' : '${currentSpeed.toStringAsFixed(2)}x',
+                  (currentSpeed - 1.0).abs() < 0.01 ? '1.0x • Normal' : '${currentSpeed.toStringAsFixed(2)}x',
                   style: TextStyle(
-                    color: currentSpeed != 1.0 ? EmberColors.primaryAmberHi : EmberColors.textPrimary,
+                    color: (currentSpeed - 1.0).abs() > 0.01 ? EmberColors.primaryAmberHi : EmberColors.textPrimary,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 0.5,

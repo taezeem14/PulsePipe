@@ -3,13 +3,15 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
+import '../widgets/upi_donation_view.dart';
 import 'sound_shaping_sheet.dart';
 import 'diagnostics_log_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+class SettingsScreen extends StatefulWidget {
+  final int initialTab;
+  const SettingsScreen({super.key, this.initialTab = 0});
 
-  static void show(BuildContext context) {
+  static void show(BuildContext context, {int initialTab = 0}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: EmberColors.obsidianBase,
@@ -18,8 +20,27 @@ class SettingsScreen extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => const SettingsScreen(),
+      builder: (_) => SettingsScreen(initialTab: initialTab),
     );
+  }
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -42,7 +63,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
               child: Row(
                 children: [
                   Container(
@@ -54,20 +75,85 @@ class SettingsScreen extends StatelessWidget {
                     child: const FaIcon(FontAwesomeIcons.gear, color: EmberColors.primaryAmber, size: 18),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
-                    'Settings & About',
-                    style: TextStyle(
-                      color: EmberColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                  const Expanded(
+                    child: Text(
+                      'Settings & About',
+                      style: TextStyle(
+                        color: EmberColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: EmberColors.textMuted, size: 20),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: EmberColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: EmberColors.outlineVariant.withValues(alpha: 0.4)),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: EmberColors.primaryAmber,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: EmberColors.primaryAmber.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
+                labelColor: EmberColors.obsidianBase,
+                unselectedLabelColor: EmberColors.textSecondary,
+                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                tabs: const [
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FaIcon(FontAwesomeIcons.sliders, size: 13),
+                        SizedBox(width: 8),
+                        Text('Settings'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FaIcon(FontAwesomeIcons.heart, size: 13),
+                        SizedBox(width: 8),
+                        Text('Donate (UPI)'),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const Divider(color: EmberColors.outlineVariant, height: 16),
+            const Divider(color: EmberColors.outlineVariant, height: 12),
             Expanded(
-              child: SettingsContent(scrollController: scrollController),
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  SettingsContent(
+                    scrollController: scrollController,
+                    onNavigateToDonate: () => _tabController.animateTo(1),
+                  ),
+                  UpiDonationView(scrollController: scrollController),
+                ],
+              ),
             ),
           ],
         );
@@ -78,8 +164,9 @@ class SettingsScreen extends StatelessWidget {
 
 class SettingsContent extends StatelessWidget {
   final ScrollController? scrollController;
+  final VoidCallback? onNavigateToDonate;
 
-  const SettingsContent({super.key, this.scrollController});
+  const SettingsContent({super.key, this.scrollController, this.onNavigateToDonate});
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +240,9 @@ class SettingsContent extends StatelessWidget {
                             Flexible(
                               child: Text(
                                 'Muhammad Taezeem Tariq',
-                                style: TextStyle(
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
                                   color: EmberColors.textPrimary,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
@@ -204,21 +293,75 @@ class SettingsContent extends StatelessWidget {
                 children: [
                   FaIcon(FontAwesomeIcons.github, size: 14, color: EmberColors.textMuted),
                   SizedBox(width: 6),
-                  Text(
-                    'github.com/taezeem14',
-                    style: TextStyle(
-                      color: EmberColors.primaryAmber,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      'github.com/taezeem14',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: EmberColors.primaryAmber,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 14),
+              InkWell(
+                onTap: onNavigateToDonate,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: EmberColors.primaryAmber,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: EmberColors.primaryAmber.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FaIcon(FontAwesomeIcons.heart, size: 14, color: EmberColors.obsidianBase),
+                      SizedBox(width: 8),
+                      Text(
+                        'Support Taezeem via UPI (7006616470@fam) 💖',
+                        style: TextStyle(
+                          color: EmberColors.obsidianBase,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
         ),
 
         const SizedBox(height: 20),
+
+        // ==========================================
+        // SECTION 0: CREATOR SUPPORT & DONATIONS
+        // ==========================================
+        const _SectionHeader(title: 'Creator Support & Donations'),
+        _SettingsTile(
+          icon: FontAwesomeIcons.indianRupeeSign,
+          iconColor: EmberColors.primaryAmber,
+          title: 'Donate via UPI (7006616470@fam)',
+          subtitle: 'Support development directly using GPay, PhonePe, Paytm or FamPay',
+          trailing: const FaIcon(FontAwesomeIcons.chevronRight, size: 12, color: EmberColors.primaryAmber),
+          onTap: onNavigateToDonate,
+        ),
+
+        const SizedBox(height: 16),
 
         // ==========================================
         // SECTION 1: AUDIO & SOUND SHAPING
@@ -265,10 +408,14 @@ class SettingsContent extends StatelessWidget {
           subtitle: 'Immediately stop audio and dismiss the playing song',
           trailing: const FaIcon(FontAwesomeIcons.chevronRight, size: 12, color: EmberColors.textMuted),
           onTap: () {
+            final messenger = ScaffoldMessenger.of(context);
             player.stopPlayback();
-            ScaffoldMessenger.of(context).showSnackBar(
+            Navigator.of(context).pop();
+            messenger.hideCurrentSnackBar();
+            messenger.showSnackBar(
               const SnackBar(
                 backgroundColor: EmberColors.surfaceContainerHigh,
+                duration: Duration(seconds: 2),
                 content: Text('Playback stopped & dismissed', style: TextStyle(color: EmberColors.textPrimary)),
               ),
             );
@@ -287,21 +434,24 @@ class SettingsContent extends StatelessWidget {
           subtitle: 'Eradicate legacy mock songs and clear temp audio cache',
           trailing: const FaIcon(FontAwesomeIcons.chevronRight, size: 12, color: EmberColors.textMuted),
           onTap: () async {
-            ScaffoldMessenger.of(context).showSnackBar(
+            final messenger = ScaffoldMessenger.of(context);
+            messenger.hideCurrentSnackBar();
+            messenger.showSnackBar(
               const SnackBar(
                 backgroundColor: EmberColors.surfaceContainerHigh,
+                duration: Duration(seconds: 1),
                 content: Text('Cleaning storage and purging old cache...', style: TextStyle(color: EmberColors.primaryAmber)),
               ),
             );
             await player.purgePlaceholders();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  backgroundColor: EmberColors.surfaceContainerHigh,
-                  content: Text('Storage cleaned & cache flushed successfully!', style: TextStyle(color: EmberColors.primaryAmberHi)),
-                ),
-              );
-            }
+            messenger.hideCurrentSnackBar();
+            messenger.showSnackBar(
+              const SnackBar(
+                backgroundColor: EmberColors.surfaceContainerHigh,
+                duration: Duration(seconds: 2),
+                content: Text('Storage cleaned & cache flushed successfully!', style: TextStyle(color: EmberColors.primaryAmberHi)),
+              ),
+            );
           },
         ),
 
@@ -314,8 +464,8 @@ class SettingsContent extends StatelessWidget {
         const _SettingsTile(
           icon: FontAwesomeIcons.mobileScreen,
           title: 'Sine Version',
-          subtitle: 'v1.0.5 (Release Build)',
-          trailing: Text('1.0.5', style: TextStyle(color: EmberColors.textMuted, fontSize: 12)),
+          subtitle: 'v1.0.6 (Release Build)',
+          trailing: Text('1.0.6', style: TextStyle(color: EmberColors.textMuted, fontSize: 12)),
           onTap: null,
         ),
         const _SettingsTile(
@@ -418,6 +568,8 @@ class _SettingsTile extends StatelessWidget {
         ),
         title: Text(
           title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: EmberColors.textPrimary,
             fontSize: 13.5,
@@ -426,6 +578,8 @@ class _SettingsTile extends StatelessWidget {
         ),
         subtitle: Text(
           subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: EmberColors.textMuted,
             fontSize: 11,

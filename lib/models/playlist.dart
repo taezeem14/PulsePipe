@@ -54,17 +54,22 @@ class Playlist {
   }
 
   factory Playlist.fromMap(Map<String, dynamic> map) {
+    final rawSongs = map['songs'];
+    final List<Song> songList = rawSongs is List
+        ? rawSongs
+            .whereType<Map>()
+            .map((item) => Song.fromMap(Map<String, dynamic>.from(item)))
+            .toList()
+        : [];
+
     return Playlist(
       id: map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? 'Untitled Playlist',
       description: map['description']?.toString() ?? '',
-      songs: (map['songs'] as List? ?? [])
-          .whereType<Map>()
-          .map((item) => Song.fromMap(Map<String, dynamic>.from(item)))
-          .toList(),
+      songs: songList,
       createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      coverUrl: map['coverUrl']?.toString(),
+      coverUrl: (map['coverUrl']?.toString().isNotEmpty == true) ? map['coverUrl'].toString() : null,
       continuationToken: map['continuationToken']?.toString(),
     );
   }

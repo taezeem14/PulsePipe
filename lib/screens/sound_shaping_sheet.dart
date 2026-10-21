@@ -213,7 +213,7 @@ class SoundShapingSheet extends StatelessWidget {
                     children: [
                       for (int i = 0; i < params.bands.length; i++)
                         _BandSlider(
-                          key: ValueKey('band_${i}_${player.eqPreset}_${params.bands[i].gain}'),
+                          key: ValueKey('band_$i'),
                           band: params.bands[i],
                           minDecibels: params.minDecibels,
                           maxDecibels: params.maxDecibels,
@@ -381,9 +381,11 @@ class _BandSliderState extends State<_BandSlider> {
             ),
           ),
           SizedBox(
-            width: 48,
+            width: 52,
             child: Text(
-              '${_gain >= 0 ? '+' : ''}${_gain.toStringAsFixed(1)} dB',
+              _gain.abs() < 0.05
+                  ? '0.0 dB'
+                  : '${_gain > 0 ? '+' : ''}${_gain.toStringAsFixed(1)} dB',
               textAlign: TextAlign.end,
               style: TextStyle(
                 color: _gain.abs() > 0.5 ? EmberColors.primaryAmber : EmberColors.textMuted,
