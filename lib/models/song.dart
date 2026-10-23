@@ -11,6 +11,8 @@ class Song {
   final String? lyrics;
   final bool isFavorite;
   final String source;
+  final String? instrumentalVideoId;
+  final String? acapellaVideoId;
 
   const Song({
     required this.id,
@@ -22,6 +24,8 @@ class Song {
     this.lyrics,
     this.isFavorite = false,
     this.source = 'youtube',
+    this.instrumentalVideoId,
+    this.acapellaVideoId,
   });
 
   bool get isYouTube => source == 'youtube' || source.isEmpty;
@@ -37,6 +41,8 @@ class Song {
     String? lyrics,
     bool? isFavorite,
     String? source,
+    String? instrumentalVideoId,
+    String? acapellaVideoId,
   }) {
     return Song(
       id: id ?? this.id,
@@ -48,6 +54,8 @@ class Song {
       lyrics: lyrics ?? this.lyrics,
       isFavorite: isFavorite ?? this.isFavorite,
       source: source ?? this.source,
+      instrumentalVideoId: instrumentalVideoId ?? this.instrumentalVideoId,
+      acapellaVideoId: acapellaVideoId ?? this.acapellaVideoId,
     );
   }
 
@@ -62,6 +70,8 @@ class Song {
       'lyrics': lyrics,
       'is_favorite': isFavorite,
       'source': source,
+      'instrumental_video_id': instrumentalVideoId,
+      'acapella_video_id': acapellaVideoId,
     };
   }
 
@@ -86,6 +96,10 @@ class Song {
         ? favVal
         : (favVal == 1 || favVal == '1' || favVal == 'true');
 
+    final rawLyrics = map['lyrics']?.toString();
+    final rawInst = (map['instrumental_video_id'] ?? map['instrumentalVideoId'])?.toString();
+    final rawAcap = (map['acapella_video_id'] ?? map['acapellaVideoId'])?.toString();
+
     return Song(
       id: rawId,
       title: map['title']?.toString() ?? 'Unknown Title',
@@ -93,9 +107,11 @@ class Song {
       duration: Duration(milliseconds: durationMs.clamp(0, 86400000)),
       artworkUrl: (map['artwork_url'] ?? map['artworkUrl'])?.toString() ?? '',
       streamUrl: rawStream,
-      lyrics: map['lyrics']?.toString(),
+      lyrics: (rawLyrics != null && rawLyrics.trim().isNotEmpty && rawLyrics != 'null') ? rawLyrics.trim() : null,
       isFavorite: isFav,
       source: inferredSource,
+      instrumentalVideoId: (rawInst != null && rawInst.isNotEmpty && rawInst != 'null') ? rawInst : null,
+      acapellaVideoId: (rawAcap != null && rawAcap.isNotEmpty && rawAcap != 'null') ? rawAcap : null,
     );
   }
 

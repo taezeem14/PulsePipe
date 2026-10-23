@@ -44,6 +44,11 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   Song? _currentSong;
   int _playRequestId = 0;
+  String? _activeStreamUrl;
+  String? get activeStreamUrl => _activeStreamUrl;
+  bool _isSwappingStream = false;
+  bool get isSwappingStream => _isSwappingStream;
+  int _swapRequestId = 0;
   AsyncCallback? _onSkipNext;
   AsyncCallback? _onSkipPrevious;
   AsyncCallback? _onCompleted;
@@ -191,6 +196,11 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     // Broadcast playback state changes
     _player.playbackEventStream.listen(
       (PlaybackEvent event) {
+        if (_isSwappingStream) {
+          // Suppress intermediate idle/Duration.zero events from ExoPlayer during seamless swap
+          return;
+        }
+
         final playing = _player.playing;
         final currentProcessing = playbackState.value.processingState;
         final exProcessing = _player.processingState;
@@ -233,7 +243,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       },
       onError: (Object e, StackTrace st) {
         LogService.w('AudioHandler', 'playbackEventStream error: $e');
-        if (_currentTrackActive && _currentSong != null && !_isReconnecting) {
+        if (_currentTrackActive && _currentSong != null && !_isReconnecting && !_isSwappingStream) {
           _handleMidStreamNetworkDrop();
         }
       },
@@ -254,6 +264,11 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     // Auto-advance when song finishes (guarded to fire only when track genuinely started and completed playback)
     _player.playerStateStream.listen(
       (state) {
+        if (_isSwappingStream) {
+          // CRITICAL: Block spurious completion/idle events during seamless stream swap
+          return;
+        }
+
         LogService.instance.recordExoState('${state.processingState.name} (playing: ${state.playing})');
         if (state.playing && state.processingState == ProcessingState.ready) {
           _currentTrackActive = true;
@@ -534,6 +549,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         final localPath = _resolveFilePath(s);
         final file = File(localPath);
         if (await file.exists()) {
+          _activeStreamUrl = localPath;
           await _player.setFilePath(localPath, initialPosition: Duration.zero, preload: true);
           if (currentRequestId != _playRequestId) {
             try { await _player.stop(); } catch (_) {}
@@ -568,6 +584,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
         try {
           LogService.stream('AudioHandler', 'Connecting to candidate #${i + 1} with Android ExoPlayer headers...');
+          _activeStreamUrl = url;
           await _player.setUrl(
             url,
             headers: isYouTubeStream ? _youtubeHeaders : null,
@@ -607,6 +624,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             final isYouTubeStream = url.contains('googlevideo.com') || url.contains('youtube.com');
             try {
               LogService.stream('AudioHandler', 'Connecting to fresh candidate #${i + 1}...');
+              _activeStreamUrl = url;
               await _player.setUrl(
                 url,
                 headers: isYouTubeStream ? _youtubeHeaders : null,
@@ -642,6 +660,7 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             LogService.stream('AudioHandler', 'Direct streams failed, attempting Piped proxy fallback for $videoId...');
             final pipedUrl = await PipedService.getAudioStream(videoId);
             if (pipedUrl != null && pipedUrl.isNotEmpty && currentRequestId == _playRequestId) {
+              _activeStreamUrl = pipedUrl;
               await _player.setUrl(
                 pipedUrl,
                 headers: _proxyHeaders,
@@ -879,65 +898,68 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       double clampGain(double g) => g.clamp(minDb, maxDb);
 
       if (vocalsOnly) {
-        // Acapella / Vocals Only: suppress kick, 808s, and cymbals; sharply boost speech and vocal formants
+        // Acapella / Vocals Only:
+        // Aggressively mute kick, 808s, bass guitar, and cymbals; isolate voice resonance
         for (int i = 0; i < n; i++) {
           final freq = bands[i].centerFrequency;
           double target;
           if (freq > 0) {
-            if (freq < 300) {
-              target = -12.0; // Cut low end and percussion
+            if (freq < 280) {
+              target = minDb; // Extreme cut on sub & bass (-15dB to -20dB)
             } else if (freq < 600) {
-              target = 1.0;
-            } else if (freq >= 600 && freq <= 3600) {
-              target = 8.5; // Lead vocal articulation
-            } else if (freq > 3600 && freq <= 7000) {
-              target = 2.5; // Vocal air
+              target = -2.0;
+            } else if (freq >= 600 && freq <= 3800) {
+              target = 9.5; // Maximum boost on speech formants and lead articulation
+            } else if (freq > 3800 && freq <= 6500) {
+              target = 2.0; // Vocal breath and air
             } else {
-              target = -10.0; // Cut extreme cymbals and high synths
+              target = -12.0; // Cut extreme hi-hats, percussions, and synth noise
             }
           } else {
-            // Index-based fallback for 5-band equalizer
+            // Index-based fallback for standard 5-band EQ
             if (i == 0) {
-              target = -12.0;
+              target = minDb;
             } else if (i == 1) {
-              target = -2.0;
+              target = -3.0;
             } else if (i == 2) {
-              target = 8.5;
+              target = 9.5;
             } else if (i == 3) {
-              target = 3.5;
+              target = 3.0;
             } else {
-              target = -10.0;
+              target = -12.0;
             }
           }
           await bands[i].setGain(clampGain(target));
         }
       } else {
-        // Karaoke / Instruments Only: carve out vocal frequencies; boost bassline, drums, and melodic instruments
+        // Karaoke / Instruments Only:
+        // Deep parametric notch carving out vocal formants (1kHz-3.5kHz);
+        // Boost low-end bass and high-end air to psychoacoustically mask any vocal residual bleed
         for (int i = 0; i < n; i++) {
           final freq = bands[i].centerFrequency;
           double target;
           if (freq > 0) {
-            if (freq < 350) {
-              target = 5.5; // Heavy bassline and kick
-            } else if (freq >= 650 && freq <= 3500) {
-              target = -13.0; // Deep vocal notch cancellation
-            } else if (freq > 3500 && freq <= 8000) {
-              target = 4.0; // Guitars, brass, synthesizers
+            if (freq < 300) {
+              target = 6.0; // Heavy kick and bassline to overpower vocal bleed
+            } else if (freq >= 650 && freq <= 3600) {
+              target = minDb; // Deepest possible hardware notch attenuation (-15dB to -20dB)
+            } else if (freq > 3600 && freq <= 8000) {
+              target = 4.5; // Preserve guitars, synthesizers, brass
             } else {
-              target = 5.0; // High-hats and acoustic sparkle
+              target = 5.5; // Sparkle, hi-hats, drum cymbals
             }
           } else {
-            // Index-based fallback for 5-band equalizer
+            // Index-based fallback for standard 5-band EQ
             if (i == 0) {
-              target = 5.5;
+              target = 6.0;
             } else if (i == 1) {
-              target = 2.0;
+              target = 1.5;
             } else if (i == 2) {
-              target = -13.0;
+              target = minDb;
             } else if (i == 3) {
-              target = 3.5;
+              target = 4.0;
             } else {
-              target = 5.0;
+              target = 5.5;
             }
           }
           await bands[i].setGain(clampGain(target));
@@ -945,6 +967,134 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
     } catch (e) {
       debugPrint('Apply isolation filter error: $e');
+    }
+  }
+
+  /// Seamlessly swaps the active audio stream to [newStreamUrl] (e.g. between Original,
+  /// Karaoke / Instruments, and Vocals / Acapella) while preserving exact playback position,
+  /// playback speed, volume, and repeat state, without stopping playback or resetting to 0:00.
+  Future<bool> swapAudioStream(
+    String newStreamUrl, {
+    required Duration currentPosition,
+    required bool playImmediately,
+    bool isLocal = false,
+  }) async {
+    if (newStreamUrl.isEmpty) {
+      LogService.w('AudioHandler', 'swapAudioStream: received empty newStreamUrl');
+      return false;
+    }
+
+    // If already playing this exact stream, maintain continuity
+    if (_activeStreamUrl == newStreamUrl) {
+      if (playImmediately && !_player.playing) {
+        await _player.play();
+      }
+      return true;
+    }
+
+    final int currentRequestId = ++_swapRequestId;
+    _playRequestId++; // Invalidate previous playSong attempts
+
+    final bool wasPlaying = _player.playing;
+    final bool shouldPlay = playImmediately || wasPlaying;
+    final Duration targetPosition = currentPosition;
+
+    LogService.stream(
+      'AudioHandler',
+      'Seamlessly swapping audio stream to "$newStreamUrl" at ${targetPosition.inSeconds}s (playImmediately: $shouldPlay)...',
+    );
+
+    // 1. Arm completion and auto-advance guards
+    _isSwappingStream = true;
+    _currentTrackActive = false;
+    _completionHandled = true;
+
+    // 2. Broadcast buffering state so notification controls stay alive at target position
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: [
+          MediaControl.skipToPrevious,
+          if (shouldPlay) MediaControl.pause else MediaControl.play,
+          MediaControl.stop,
+          MediaControl.skipToNext,
+        ],
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+        },
+        androidCompactActionIndices: const [0, 1, 3],
+        processingState: AudioProcessingState.buffering,
+        playing: shouldPlay,
+        updatePosition: targetPosition,
+        bufferedPosition: targetPosition,
+        speed: _activeSpeed,
+      ),
+    );
+
+    try {
+      final isLocalFile = isLocal ||
+          newStreamUrl.startsWith('/') ||
+          newStreamUrl.startsWith('file://') ||
+          RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(newStreamUrl);
+
+      final isYouTubeStream = newStreamUrl.contains('googlevideo.com') ||
+          newStreamUrl.contains('youtube.com');
+      final headers = isYouTubeStream ? _youtubeHeaders : _proxyHeaders;
+
+      // 3. Switch audio source directly without calling _player.stop()
+      if (isLocalFile) {
+        final localPath = _resolveFilePath(newStreamUrl);
+        await _player.setFilePath(
+          localPath,
+          initialPosition: targetPosition,
+          preload: true,
+        ).timeout(const Duration(seconds: 12));
+      } else {
+        await _player.setUrl(
+          newStreamUrl,
+          headers: headers,
+          initialPosition: targetPosition,
+          preload: true,
+        ).timeout(const Duration(seconds: 12));
+      }
+
+      // Check if superseded by rapid subsequent toggles
+      if (currentRequestId != _swapRequestId) {
+        debugPrint('[AudioHandler] swapAudioStream #$currentRequestId superseded by #$_swapRequestId');
+        return false;
+      }
+
+      // 4. Restore playback parameters (speed, repeat mode, DSP equalizer)
+      await _restorePlaybackParameters();
+
+      // 5. Resume playback if requested or if previously playing
+      if (shouldPlay) {
+        await _player.play();
+      }
+
+      // 6. Update tracking state & disarm guards
+      _activeStreamUrl = newStreamUrl;
+      _lastKnownPosition = targetPosition;
+      _currentTrackActive = true;
+      _completionHandled = false;
+      _consecutiveReconnectAttempts = 0;
+      _isSwappingStream = false;
+
+      LogService.stream(
+        'AudioHandler',
+        'Successfully swapped audio stream! Playing at ${targetPosition.inSeconds}s (speed: ${_activeSpeed}x)',
+      );
+      return true;
+    } catch (e, st) {
+      if (currentRequestId != _swapRequestId) {
+        // Silently ignore superseded or aborted requests
+        return false;
+      }
+      LogService.w('AudioHandler', 'swapAudioStream failed: $e\n$st');
+      _isSwappingStream = false;
+      _completionHandled = false;
+      return false;
     }
   }
 
@@ -1036,6 +1186,8 @@ class SineAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> stop() async {
     _currentSong = null;
+    _activeStreamUrl = null;
+    _isSwappingStream = false;
     _currentTrackActive = false;
     _completionHandled = true;
     _isSkippingSponsor = false;

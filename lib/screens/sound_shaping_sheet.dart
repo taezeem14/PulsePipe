@@ -109,15 +109,50 @@ class SoundShapingSheet extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // Stem Isolation (Vocals Only vs Instruments Only)
-              const Text(
-                'ISOLATION & KARAOKE (DSP FILTER)',
-                style: TextStyle(
-                  color: EmberColors.textMuted,
-                  fontSize: 11,
-                  letterSpacing: 1.2,
-                  fontWeight: FontWeight.bold,
-                ),
+              // Studio Stem Isolation (YouTube Smart Stems + AI Demucs + DSP Fallback)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'STUDIO STEM ISOLATION & KARAOKE',
+                    style: TextStyle(
+                      color: EmberColors.textMuted,
+                      fontSize: 11,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (player.stemStatusBadgeText != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: EmberColors.primaryAmber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: EmberColors.primaryAmber.withValues(alpha: 0.4), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (player.isLoadingStem) ...[
+                            const SizedBox(
+                              width: 9,
+                              height: 9,
+                              child: CircularProgressIndicator(strokeWidth: 1.5, color: EmberColors.primaryAmber),
+                            ),
+                            const SizedBox(width: 5),
+                          ],
+                          Text(
+                            player.stemStatusBadgeText!,
+                            style: const TextStyle(
+                              color: EmberColors.primaryAmber,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 10),
               Row(
@@ -128,6 +163,7 @@ class SoundShapingSheet extends StatelessWidget {
                       subtitle: 'Isolate voice (acapella)',
                       icon: Icons.mic_rounded,
                       isActive: player.isolationMode == IsolationMode.vocalsOnly,
+                      isLoading: player.isLoadingStem && player.isolationMode == IsolationMode.vocalsOnly,
                       onTap: () => player.toggleIsolationMode(IsolationMode.vocalsOnly),
                     ),
                   ),
@@ -138,11 +174,44 @@ class SoundShapingSheet extends StatelessWidget {
                       subtitle: 'Remove voice (karaoke)',
                       icon: Icons.music_note_rounded,
                       isActive: player.isolationMode == IsolationMode.instrumentsOnly,
+                      isLoading: player.isLoadingStem && player.isolationMode == IsolationMode.instrumentsOnly,
                       onTap: () => player.toggleIsolationMode(IsolationMode.instrumentsOnly),
                     ),
                   ),
                 ],
               ),
+              if (player.isolationMode != IsolationMode.none) ...[
+                const SizedBox(height: 10),
+                Center(
+                  child: InkWell(
+                    onTap: () => player.revertToOriginalTrack(),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: EmberColors.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: EmberColors.surfaceContainerHighest),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.restore_rounded, size: 14, color: EmberColors.primaryAmber),
+                          SizedBox(width: 6),
+                          Text(
+                            'Revert to Original Studio Track',
+                            style: TextStyle(
+                              color: EmberColors.textPrimary,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 22),
 
               // Presets
@@ -405,6 +474,7 @@ class _IsolationCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final bool isActive;
+  final bool isLoading;
   final VoidCallback onTap;
 
   const _IsolationCard({
@@ -412,6 +482,7 @@ class _IsolationCard extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.isActive,
+    this.isLoading = false,
     required this.onTap,
   });
 
@@ -457,7 +528,13 @@ class _IsolationCard extends StatelessWidget {
                       color: isActive ? EmberColors.primaryAmber : EmberColors.textSecondary,
                     ),
                   ),
-                  if (isActive)
+                  if (isLoading)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: EmberColors.primaryAmber),
+                    )
+                  else if (isActive)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(

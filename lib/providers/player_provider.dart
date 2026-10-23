@@ -11,6 +11,7 @@ import '../services/lyrics_service.dart';
 import '../services/storage_service.dart';
 import '../services/youtube_importer_service.dart';
 import '../services/stream_resolver_service.dart';
+import '../services/stem_service.dart';
 
 enum IsolationMode {
   none,
@@ -70,6 +71,15 @@ class PlayerProvider extends ChangeNotifier {
   double _bassBoost = 0.0;
   Map<int, double> _bandGains = {};
   IsolationMode _isolationMode = IsolationMode.none;
+  // Studio Stem Isolation & Seamless Stream Swapping
+  bool _isLoadingStem = false;
+  bool get isLoadingStem => _isLoadingStem;
+  bool _isStudioStemActive = false;
+  bool get isStudioStemActive => _isStudioStemActive;
+  String? _stemStatusBadgeText;
+  String? get stemStatusBadgeText => _stemStatusBadgeText;
+  final Map<String, String> _originalStreamCache = {};
+
 
   LyricsResult _lyrics = LyricsResult.empty;
   bool _isLoadingLyrics = false;
@@ -202,9 +212,17 @@ class PlayerProvider extends ChangeNotifier {
         StreamResolverService.invalidateCache(failedSong.id);
         YouTubeImporterService.invalidateCache(failedSong.id);
 
+        if (_consecutiveStreamFailures >= _maxConsecutiveFailures) {
+          debugPrint('[PlayerProvider] Exceeded max consecutive stream failures ($_maxConsecutiveFailures). Halting queue auto-advance.');
+          _isPlaying = false;
+          _isLoadingStream = false;
+          notifyListeners();
+          return;
+        }
+
         // Resilient auto-advance: if in a playlist or queue, keep playing next track instead of cutting off!
-        if (_queue.length > 1 && _consecutiveStreamFailures < 3) {
-          debugPrint('[PlayerProvider] Auto-advancing to next track after failure...');
+        if (_queue.length > 1) {
+          debugPrint('[PlayerProvider] Auto-advancing to next track after failure (failure count: $_consecutiveStreamFailures)...');
           skipNext(isAuto: true);
         } else {
           _isPlaying = false;
@@ -352,6 +370,7 @@ class PlayerProvider extends ChangeNotifier {
     _isLoadingStream = false;
     notifyListeners();
     await _audioHandler.pause();
+    await _audioHandler.seek(Duration.zero);
   }
 
   void _prefetchNextTrack() {
@@ -427,6 +446,11 @@ class PlayerProvider extends ChangeNotifier {
     _duration = song.duration;
     _isPlaying = true;
     _isLoadingStream = true;
+    _isLoadingStem = false;
+    _isStudioStemActive = false;
+    _stemStatusBadgeText = null;
+    _isolationMode = IsolationMode.none;
+    _originalStreamCache.remove(song.id);
     notifyListeners();
 
     final thisSession = ++_playSessionId;
@@ -568,6 +592,12 @@ class PlayerProvider extends ChangeNotifier {
       if (_repeatMode == 'all') {
         nextIdx = 0;
       } else {
+        _isPlaying = false;
+        _position = Duration.zero;
+        _isLoadingStream = false;
+        notifyListeners();
+        await _audioHandler.pause();
+        await _audioHandler.seek(Duration.zero);
         return; // End of queue
       }
     }
@@ -1067,28 +1097,126 @@ class PlayerProvider extends ChangeNotifier {
 
   Future<void> toggleIsolationMode(IsolationMode mode) async {
     if (_isolationMode == mode) {
-      _isolationMode = IsolationMode.none;
-      await setEqualizerPreset('Flat');
+      await revertToOriginalTrack();
       return;
     }
 
     _isolationMode = mode;
-    _eqEnabled = true;
-    await _storageService.saveEqualizerEnabled(true);
-    await _audioHandler.setEqualizerEnabled(true);
+    _isLoadingStem = true;
+    _stemStatusBadgeText = mode == IsolationMode.instrumentsOnly
+        ? 'Resolving Studio Karaoke...'
+        : 'Resolving Studio Acapella...';
+    notifyListeners();
 
-    final presetName = mode == IsolationMode.vocalsOnly ? 'Vocals Only' : 'Instruments Only';
-    _eqPreset = presetName;
-    await _storageService.saveEqualizerPreset(presetName);
-    await _audioHandler.applyIsolationFilter(vocalsOnly: mode == IsolationMode.vocalsOnly);
+    final song = currentSong;
+    if (song == null) {
+      _isLoadingStem = false;
+      _stemStatusBadgeText = null;
+      notifyListeners();
+      return;
+    }
+
+    // Cache current original stream URL for instantaneous 0ms reversion
+    if (!_originalStreamCache.containsKey(song.id) && _audioHandler.activeStreamUrl != null) {
+      _originalStreamCache[song.id] = _audioHandler.activeStreamUrl!;
+    }
 
     try {
-      final params = await _audioHandler.equalizer.parameters;
-      for (int i = 0; i < params.bands.length; i++) {
-        _bandGains[i] = params.bands[i].gain;
+      final stemType = mode == IsolationMode.instrumentsOnly
+          ? StemType.instrumental
+          : StemType.vocals;
+
+      final stemResult = await StemService.instance.resolveStem(
+        song: song,
+        type: stemType,
+        targetDuration: _duration > Duration.zero ? _duration : song.duration,
+      );
+
+      if (currentSong?.id != song.id) {
+        // Track switched while stem resolution was in flight; abort
+        return;
       }
-      await _storageService.saveBandGains(_bandGains);
-    } catch (_) {}
+
+      if (stemResult.isStudioStem && stemResult.streamUrl != null) {
+        _isStudioStemActive = true;
+        _stemStatusBadgeText = mode == IsolationMode.instrumentsOnly
+            ? (stemResult.isLocal ? 'Offline Studio Karaoke' : 'Studio Karaoke (Synced)')
+            : (stemResult.isLocal ? 'Offline Studio Acapella' : 'Studio Acapella (Synced)');
+
+        // Clear heavy EQ notch since we now have dedicated studio stem audio
+        await _audioHandler.applyEqualizerPreset('Flat');
+        await _audioHandler.setEqualizerEnabled(false);
+
+        // Swap ExoPlayer audio stream seamlessly at exact current position
+        await _audioHandler.swapAudioStream(
+          stemResult.streamUrl!,
+          currentPosition: _position,
+          playImmediately: _isPlaying,
+          isLocal: stemResult.isLocal,
+        );
+      } else {
+        // Fallback: apply deep hardware DSP notch filter + psychoacoustic frequency masking
+        _isStudioStemActive = false;
+        _stemStatusBadgeText = mode == IsolationMode.instrumentsOnly
+            ? 'DSP Vocal Shaper'
+            : 'DSP Vocal Boost';
+
+        _eqEnabled = true;
+        await _storageService.saveEqualizerEnabled(true);
+        await _audioHandler.setEqualizerEnabled(true);
+
+        final presetName = mode == IsolationMode.vocalsOnly ? 'Vocals Only' : 'Instruments Only';
+        _eqPreset = presetName;
+        await _storageService.saveEqualizerPreset(presetName);
+        await _audioHandler.applyIsolationFilter(vocalsOnly: mode == IsolationMode.vocalsOnly);
+
+        try {
+          final params = await _audioHandler.equalizer.parameters;
+          for (int i = 0; i < params.bands.length; i++) {
+            _bandGains[i] = params.bands[i].gain;
+          }
+          await _storageService.saveBandGains(_bandGains);
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('[PlayerProvider] Stem toggle error: $e');
+      _stemStatusBadgeText = 'DSP Fallback';
+      await _audioHandler.applyIsolationFilter(vocalsOnly: mode == IsolationMode.vocalsOnly);
+    } finally {
+      _isLoadingStem = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> revertToOriginalTrack() async {
+    _isolationMode = IsolationMode.none;
+    _isStudioStemActive = false;
+    _stemStatusBadgeText = null;
+    _isLoadingStem = false;
+
+    await setEqualizerPreset('Flat');
+    await setEqualizerEnabled(false);
+
+    final song = currentSong;
+    if (song != null) {
+      final cachedOriginalUrl = _originalStreamCache[song.id];
+      if (cachedOriginalUrl != null) {
+        await _audioHandler.swapAudioStream(
+          cachedOriginalUrl,
+          currentPosition: _position,
+          playImmediately: _isPlaying,
+        );
+      } else {
+        final candidates = await StreamResolverService.resolvePlayableStreamCandidates(song);
+        if (candidates.isNotEmpty) {
+          await _audioHandler.swapAudioStream(
+            candidates.first,
+            currentPosition: _position,
+            playImmediately: _isPlaying,
+          );
+        }
+      }
+    }
 
     notifyListeners();
   }
@@ -1234,9 +1362,13 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
 
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_isDisposed) {
+        timer.cancel();
+        return;
+      }
       if (_sleepSecondsRemaining > 0) {
         _sleepSecondsRemaining--;
-        notifyListeners();
+        if (!_isDisposed) notifyListeners();
       } else {
         cancelSleepTimer();
         _audioHandler.pause();

@@ -464,8 +464,8 @@ class SettingsContent extends StatelessWidget {
         const _SettingsTile(
           icon: FontAwesomeIcons.mobileScreen,
           title: 'Sine Version',
-          subtitle: 'v1.0.6 (Release Build)',
-          trailing: Text('1.0.6', style: TextStyle(color: EmberColors.textMuted, fontSize: 12)),
+          subtitle: 'v1.0.7 (Release Build)',
+          trailing: Text('1.0.7', style: TextStyle(color: EmberColors.textMuted, fontSize: 12)),
           onTap: null,
         ),
         const _SettingsTile(

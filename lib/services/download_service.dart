@@ -71,19 +71,21 @@ class DownloadService {
   static Future<bool> requestStoragePermission() async {
     if (!Platform.isAndroid) return true;
     try {
-      // 1. Android <= 10 (API <= 29)
+      // 1. Android 11+ (API 30+): MANAGE_EXTERNAL_STORAGE is required to write directly to /storage/emulated/0/Sine-Music
+      final manageStatus = await Permission.manageExternalStorage.status;
+      if (!manageStatus.isGranted) {
+        final req = await Permission.manageExternalStorage.request();
+        if (req.isGranted) return true;
+      } else {
+        return true;
+      }
+
+      // 2. Android <= 10 (API <= 29): WRITE_EXTERNAL_STORAGE legacy permission
       var storageStatus = await Permission.storage.status;
       if (!storageStatus.isGranted) {
         storageStatus = await Permission.storage.request();
       }
       if (storageStatus.isGranted) return true;
-
-      // 2. Android 11+ (API 30+)
-      var manageStatus = await Permission.manageExternalStorage.status;
-      if (!manageStatus.isGranted) {
-        manageStatus = await Permission.manageExternalStorage.request();
-      }
-      if (manageStatus.isGranted) return true;
 
       // 3. Android 13+ (API 33+) granular media permissions
       final audioStatus = await Permission.audio.request();
@@ -329,8 +331,10 @@ class DownloadService {
 
     final dir = await _getMediaDirectory(isVideo: false);
     final rawBase = _sanitizeFilename('${song.title} - ${song.artist}');
-    final safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
-    final safeId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    var safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
+    safeBase = safeBase.replaceAll(RegExp(r'[.\s_-]+$'), '');
+    final cleanId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final safeId = cleanId.isNotEmpty ? cleanId : '${song.hashCode.abs()}';
     final targetM4a = File('${dir.path}/${safeBase}_$safeId.m4a');
     final targetWebm = File('${dir.path}/${safeBase}_$safeId.webm');
 
@@ -499,8 +503,10 @@ class DownloadService {
 
     final dir = await _getMediaDirectory(isVideo: true);
     final rawBase = _sanitizeFilename('${song.title} - ${song.artist}');
-    final safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
-    final safeId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    var safeBase = rawBase.length > 90 ? rawBase.substring(0, 90).trimRight() : rawBase;
+    safeBase = safeBase.replaceAll(RegExp(r'[.\s_-]+$'), '');
+    final cleanId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final safeId = cleanId.isNotEmpty ? cleanId : '${song.hashCode.abs()}';
     final targetMp4 = File('${dir.path}/${safeBase}_$safeId.mp4');
     final targetWebm = File('${dir.path}/${safeBase}_$safeId.webm');
 

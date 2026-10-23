@@ -119,13 +119,38 @@ class MiniPlayer extends StatelessWidget {
                               ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          song.artist,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: EmberColors.textMuted,
+                        Row(
+                          children: [
+                            if (player.isolationMode != IsolationMode.none) ...[
+                              Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: EmberColors.primaryAmber.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  player.isolationMode == IsolationMode.instrumentsOnly ? 'KARAOKE' : 'VOCALS',
+                                  style: const TextStyle(
+                                    color: EmberColors.primaryAmber,
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
                               ),
+                            ],
+                            Expanded(
+                              child: Text(
+                                song.artist,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: EmberColors.textMuted,
+                                    ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

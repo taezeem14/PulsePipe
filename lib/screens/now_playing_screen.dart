@@ -123,6 +123,73 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
               ),
             ),
 
+            // Active Studio Stem Status Banner
+            if (player.isolationMode != IsolationMode.none)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: EmberColors.primaryAmber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: EmberColors.primaryAmber.withValues(alpha: 0.4),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (player.isLoadingStem) ...[
+                            const SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: EmberColors.primaryAmber,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ] else ...[
+                            Icon(
+                              player.isolationMode == IsolationMode.instrumentsOnly
+                                  ? Icons.music_note_rounded
+                                  : Icons.mic_rounded,
+                              size: 13,
+                              color: EmberColors.primaryAmber,
+                            ),
+                            const SizedBox(width: 5),
+                          ],
+                          Text(
+                            player.stemStatusBadgeText ??
+                                (player.isolationMode == IsolationMode.instrumentsOnly
+                                    ? 'Karaoke Active'
+                                    : 'Acapella Active'),
+                            style: const TextStyle(
+                              color: EmberColors.primaryAmber,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => player.revertToOriginalTrack(),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 15,
+                              color: EmberColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Center Viewport: Animated flip between Album Art / Vinyl Disc and Karaoke Lyrics
             Expanded(
               flex: 5,

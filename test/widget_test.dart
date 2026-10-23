@@ -5,6 +5,7 @@ import 'package:spotify_newpipe/providers/player_provider.dart';
 import 'package:spotify_newpipe/services/lyrics_service.dart';
 import 'package:spotify_newpipe/services/sponsorblock_service.dart';
 import 'package:spotify_newpipe/services/youtube_importer_service.dart';
+import 'package:spotify_newpipe/services/stem_service.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
@@ -17,6 +18,8 @@ void main() {
         duration: Duration(minutes: 3, seconds: 32),
         artworkUrl: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
         streamUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        instrumentalVideoId: 'inst_123',
+        acapellaVideoId: 'acap_456',
       );
 
       expect(song.id, 'yt_dQw4w9WgXcQ');
@@ -25,22 +28,28 @@ void main() {
       expect(song.duration.inSeconds, 212);
       expect(song.artworkUrl, isNotEmpty);
       expect(song.streamUrl, isNotEmpty);
+      expect(song.instrumentalVideoId, 'inst_123');
+      expect(song.acapellaVideoId, 'acap_456');
 
       final map = song.toMap();
       final revived = Song.fromMap(map);
       expect(revived.id, song.id);
       expect(revived.title, song.title);
       expect(revived.artist, song.artist);
+      expect(revived.instrumentalVideoId, 'inst_123');
+      expect(revived.acapellaVideoId, 'acap_456');
     });
 
-    test('Playlist correctly adds and serializes songs', () {
+    test('Playlist correctly adds and serializes songs with snake_case support', () {
+      final now = DateTime.now();
       final playlist = Playlist(
         id: 'pl_favorites',
         title: 'Cyberpunk Mix',
         description: 'Synthwave & Electronic',
-        coverUrl: '',
+        coverUrl: 'https://example.com/cover.jpg',
         songs: const [],
-        createdAt: DateTime.now(),
+        createdAt: now,
+        continuationToken: 'token_abc_123',
       );
 
       const track = Song(
@@ -57,8 +66,13 @@ void main() {
       expect(updatedPlaylist.songs.first.title, 'Resonance');
 
       final map = updatedPlaylist.toMap();
+      expect(map['cover_url'], 'https://example.com/cover.jpg');
+      expect(map['continuation_token'], 'token_abc_123');
+
       final revived = Playlist.fromMap(map);
       expect(revived.title, 'Cyberpunk Mix');
+      expect(revived.coverUrl, 'https://example.com/cover.jpg');
+      expect(revived.continuationToken, 'token_abc_123');
       expect(revived.songs.length, 1);
       expect(revived.songs.first.artist, 'HOME');
     });
@@ -158,6 +172,7 @@ void main() {
         expect(e, isNotNull);
       }
     });
+
     test('LyricsService accurately parses third-party re-upload titles and sanitizes channels', () {
       // 1. Third-party upload with "Artist - Track (Lyrics)" by curator channel
       final cand1 = LyricsService.generateCandidates(
@@ -187,12 +202,22 @@ void main() {
       // 5. Title with leading track number and noise tags
       final cleanT = LyricsService.cleanTitle('01. Billie Eilish - BIRDS OF A FEATHER (Slowed + Reverb)');
       expect(cleanT, 'Billie Eilish - BIRDS OF A FEATHER');
+
+      // 6. CJK brackets cleaning
+      final cjkClean = LyricsService.cleanTitle('YOASOBI - 【MV】 夜に駆ける');
+      expect(cjkClean.contains('【MV】'), isFalse);
     });
 
     test('IsolationMode enum supports Vocals Only and Instruments Only states', () {
       expect(IsolationMode.values, contains(IsolationMode.none));
       expect(IsolationMode.values, contains(IsolationMode.vocalsOnly));
       expect(IsolationMode.values, contains(IsolationMode.instrumentsOnly));
+    });
+
+    test('StemService initializes with clean cache and supports clearing', () {
+      final stemService = StemService.instance;
+      expect(stemService, isNotNull);
+      StemService.clearMemoryCache();
     });
   });
 }

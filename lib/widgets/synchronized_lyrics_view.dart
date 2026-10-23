@@ -119,20 +119,23 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
           final verticalCenterPadding = (constraints.maxHeight / 2) - 28.0;
           final safeVerticalPadding = verticalCenterPadding.clamp(24.0, 500.0);
 
-          return NotificationListener<UserScrollNotification>(
-            onNotification: (notif) {
-              if (notif.direction != ScrollDirection.idle) {
-                _userScrolling = true;
-                _userScrollTimer?.cancel();
-              } else {
-                _userScrollTimer?.cancel();
-                _userScrollTimer = Timer(const Duration(seconds: 3), () {
-                  if (mounted) _userScrolling = false;
-                });
-              }
-              return false;
-            },
-            child: ListView.builder(
+          return Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              NotificationListener<UserScrollNotification>(
+                onNotification: (notif) {
+                  if (notif.direction != ScrollDirection.idle) {
+                    _userScrolling = true;
+                    _userScrollTimer?.cancel();
+                  } else {
+                    _userScrollTimer?.cancel();
+                    _userScrollTimer = Timer(const Duration(seconds: 3), () {
+                      if (mounted) _userScrolling = false;
+                    });
+                  }
+                  return false;
+                },
+                child: ListView.builder(
               controller: _scrollController,
               padding: EdgeInsets.symmetric(
                 horizontal: 20,
@@ -184,7 +187,44 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
                   ),
                 );
               },
-            ),
+                ),
+              ),
+              if (player.isolationMode == IsolationMode.instrumentsOnly)
+                Positioned(
+                  top: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: EmberColors.obsidianBase.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: EmberColors.primaryAmber.withValues(alpha: 0.6), width: 1.2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: EmberColors.primaryAmber.withValues(alpha: 0.25),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.mic_external_on_rounded, size: 13, color: EmberColors.primaryAmber),
+                        SizedBox(width: 6),
+                        Text(
+                          'KARAOKE STAGE • SING ALONG',
+                          style: TextStyle(
+                            color: EmberColors.primaryAmber,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           );
         },
       );

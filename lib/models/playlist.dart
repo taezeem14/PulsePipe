@@ -48,8 +48,11 @@ class Playlist {
       'description': description,
       'songs': songs.map((s) => s.toMap()).toList(),
       'createdAt': createdAt.toIso8601String(),
+      'created_at': createdAt.toIso8601String(),
       'coverUrl': coverUrl,
+      'cover_url': coverUrl,
       'continuationToken': continuationToken,
+      'continuation_token': continuationToken,
     };
   }
 
@@ -62,15 +65,18 @@ class Playlist {
             .toList()
         : [];
 
+    final rawCover = (map['coverUrl'] ?? map['cover_url'])?.toString();
+    final rawToken = (map['continuationToken'] ?? map['continuation_token'])?.toString();
+
     return Playlist(
       id: map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? 'Untitled Playlist',
       description: map['description']?.toString() ?? '',
       songs: songList,
-      createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ??
+      createdAt: DateTime.tryParse((map['createdAt'] ?? map['created_at'])?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      coverUrl: (map['coverUrl']?.toString().isNotEmpty == true) ? map['coverUrl'].toString() : null,
-      continuationToken: map['continuationToken']?.toString(),
+      coverUrl: (rawCover != null && rawCover.isNotEmpty && rawCover != 'null') ? rawCover : null,
+      continuationToken: (rawToken != null && rawToken.isNotEmpty && rawToken != 'null') ? rawToken : null,
     );
   }
 

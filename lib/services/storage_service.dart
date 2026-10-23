@@ -28,11 +28,15 @@ class StorageService {
   static const String _shuffleKey = 'sine_shuffle';
   static const String _shuffleLegacyKey = 'pulsepipe_shuffle';
 
+  static const String _searchesKey = 'sine_recent_searches_v1';
+  static const String _searchesLegacyKey = 'ember_recent_searches_v1';
+
   final SharedPreferences? _prefs;
   final List<Song> _memFavorites = [];
   final List<Song> _memHistory = [];
   final List<Playlist> _memPlaylists = [];
   final List<Song> _memDownloads = [];
+  final List<String> _memSearches = [];
   double _memSpeed = 1.0;
 
   static String? _safeJsonEncode(Map<String, dynamic> map) {
@@ -358,5 +362,45 @@ class StorageService {
   Future<void> saveBandGains(Map<int, double> gains) async {
     final stringMap = gains.map((k, v) => MapEntry(k.toString(), v));
     await _prefs?.setString(_eqBandGainsKey, jsonEncode(stringMap));
+  }
+
+  List<String> loadRecentSearches() {
+    if (_prefs == null) {
+      return List<String>.from(_memSearches);
+    }
+    final raw = _prefs.getStringList(_searchesKey) ?? _prefs.getStringList(_searchesLegacyKey) ?? [];
+    final cleaned = raw
+        .where((s) => s.trim().isNotEmpty && s != 'null')
+        .map((s) => s.trim())
+        .toSet()
+        .toList();
+    _memSearches.clear();
+    _memSearches.addAll(cleaned);
+    return cleaned;
+  }
+
+  Future<void> saveRecentSearches(List<String> searches) async {
+    final cleaned = searches
+        .where((s) => s.trim().isNotEmpty && s != 'null')
+        .map((s) => s.trim())
+        .take(40)
+        .toList();
+    _memSearches.clear();
+    _memSearches.addAll(cleaned);
+    await _prefs?.setStringList(_searchesKey, cleaned);
+  }
+
+  Future<void> addRecentSearch(String query) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return;
+    final current = loadRecentSearches();
+    current.removeWhere((q) => q.toLowerCase() == clean.toLowerCase());
+    current.insert(0, clean);
+    await saveRecentSearches(current);
+  }
+
+  Future<void> clearRecentSearches() async {
+    _memSearches.clear();
+    await _prefs?.remove(_searchesKey);
   }
 }

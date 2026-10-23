@@ -62,16 +62,19 @@ class LyricsService {
   /// Deep-cleans title string by stripping noise tags, resolution/fps, brackets, quotes, etc.
   static String cleanTitle(String input) {
     final cleaned = input
+        // Strip leading CJK / bracket tags like 【MV】, [MV], 【PV】, [Official Video]
+        .replaceAll(RegExp(r'^\s*[【\[\(\]](?:mv|pv|official\s*(?:music\s*)?video|video\s*oficial|clip\s*officiel)[】\]\)]\s*', caseSensitive: false), '')
+        // Strip bracketed noise with standard & full-width / CJK brackets
         .replaceAll(
           RegExp(
-            r'\s*[\(\[](?:official\s*(?:music\s*)?video|official\s*audio|official|music\s*video|audio|lyric\s*video|lyrics?|visualizer|remastered|remaster|hd|4k|1080p|720p|60fps|live(?:\s*at[^\)\]]*)?|acoustic|slowed\s*\+?\s*reverb|slowed|reverb|nightcore|sped\s*up|bass\s*boosted|tiktok\s*(?:version)?|version|deluxe|prod\.[^\)\]]*|clean|explicit|letra|paroles|traduzione|sub\s*espa[ñn]ol|subtitulado|8d\s*audio)[^\)\]]*[\)\]]',
+            r'\s*[\(\[【（［「『](?:official\s*(?:music\s*)?video|official\s*audio|official|music\s*video|audio|lyric\s*video|lyrics?|visualizer|remastered|remaster|hd|4k|1080p|720p|60fps|mv|pv|live(?:\s*at[^)\]】）］」』]*)?|acoustic|slowed\s*\+?\s*reverb|slowed|reverb|nightcore|sped\s*up|bass\s*boosted|tiktok\s*(?:version)?|version|deluxe|prod\.[^)\]】）］」』]*|clean|explicit|letra|paroles|traduzione|sub\s*espa[ñn]ol|subtitulado|8d\s*audio|video\s*oficial|audio\s*oficial|clip\s*officiel)[^)\]】）］」』]*[\)\]】）］」』]',
             caseSensitive: false,
           ),
           '',
         )
         .replaceAll(
           RegExp(
-            r'\s*[\(\[](?:feat\.|ft\.)[^\)\]]*[\)\]]',
+            r'\s*[\(\[【（［](?:feat\.|ft\.)[^)\]】）］]*[\)\]】）］]',
             caseSensitive: false,
           ),
           '',
@@ -84,7 +87,9 @@ class LyricsService {
           '',
         )
         .replaceAll(RegExp(r'^\s*\d{1,3}[\.\s-]+\s*'), '')
-        .replaceAll(RegExp(r'["\x27“”«»]'), '')
+        // Strip surrounding quotation marks, preserving inner apostrophes (e.g. Don't, Can't)
+        .replaceAll(RegExp(r'^["“”«»\x27]+|["“”«»\x27]+$'), '')
+        .replaceAll(RegExp(r'["“”«»]'), '')
         .trim();
 
     return cleaned.isNotEmpty ? cleaned : input.trim();
@@ -134,7 +139,8 @@ class LyricsService {
     }
 
     // 1. Check if title contains delimiter "Artist - Title" (standard third-party reupload pattern)
-    final delimiterMatch = RegExp(r'\s+[-–—:|]\s+').firstMatch(cleanedT);
+    // Support both ASCII and full-width CJK dashes/delimiters with optional ideographic spaces
+    final delimiterMatch = RegExp(r'[\s\u3000]*[-–—―:|\/／－〜～~][\s\u3000]*').firstMatch(cleanedT);
     if (delimiterMatch != null) {
       final partA = cleanedT.substring(0, delimiterMatch.start).trim();
       final partB = cleanedT.substring(delimiterMatch.end).trim();
@@ -260,7 +266,7 @@ class LyricsService {
     }
 
     const headers = {
-      'User-Agent': 'Sine/1.0.3 (https://github.com/taezeem14/Sine)',
+      'User-Agent': 'Sine/1.0.7 (https://github.com/taezeem14/Sine)',
       'Accept': 'application/json',
     };
 
@@ -349,7 +355,7 @@ class LyricsService {
     // -----------------------------------------------------------------
     for (final cand in candidates.where((c) => c.artist.isNotEmpty && c.title.isNotEmpty).take(2)) {
       try {
-        final ovhUrl = Uri.https('api.lyrics.ovh', '/v1/${cand.artist}/${cand.title}');
+        final ovhUrl = Uri.https('api.lyrics.ovh', '/v1/${Uri.encodeComponent(cand.artist)}/${Uri.encodeComponent(cand.title)}');
         final ovhResp = await http.get(ovhUrl, headers: headers).timeout(const Duration(seconds: 4));
 
         if (ovhResp.statusCode == 200) {
