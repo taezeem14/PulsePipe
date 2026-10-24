@@ -331,16 +331,32 @@ class TrackOptionsSheet extends StatelessWidget {
             ),
             _OptionTile(
               icon: FontAwesomeIcons.radio,
-              title: 'Start Radio / Add More Like This',
-              subtitle: 'Queue similar tracks with smart recommendations',
+              title: 'Start Song Radio',
+              subtitle: 'Infinite algorithmic station seeded from this track',
               onTap: () {
                 final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(context);
-                player.startRadio(song);
+                player.startRadio(song, isArtistRadio: false);
                 messenger.showSnackBar(
                   SnackBar(
                     backgroundColor: EmberColors.surfaceContainerHigh,
-                    content: Text('Started Radio based on "${song.title}"', style: const TextStyle(color: EmberColors.primaryAmberHi)),
+                    content: Text('Started Song Radio based on "${song.title}"', style: const TextStyle(color: EmberColors.primaryAmberHi)),
+                  ),
+                );
+              },
+            ),
+            _OptionTile(
+              icon: FontAwesomeIcons.microphoneLines,
+              title: 'Start Artist Radio',
+              subtitle: 'Explore music from ${song.artist} & similar artists',
+              onTap: () {
+                final messenger = ScaffoldMessenger.of(context);
+                Navigator.pop(context);
+                player.startRadio(song, isArtistRadio: true);
+                messenger.showSnackBar(
+                  SnackBar(
+                    backgroundColor: EmberColors.surfaceContainerHigh,
+                    content: Text('Started Artist Radio for "${song.artist}"', style: const TextStyle(color: EmberColors.primaryAmberHi)),
                   ),
                 );
               },

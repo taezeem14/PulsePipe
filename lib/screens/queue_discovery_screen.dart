@@ -540,7 +540,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
         ),
 
         // Recommendations Section
-        if (reco.isNotEmpty) ...[
+        if (reco.isNotEmpty || player.isLoadingRecommendations) ...[
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(18, 20, 18, 8),
@@ -559,10 +559,26 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                               letterSpacing: 1.2,
                             ),
                       ),
+                      if (player.isLoadingRecommendations) ...[
+                        const SizedBox(width: 8),
+                        const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(strokeWidth: 1.5, color: EmberColors.primaryAmber),
+                        ),
+                      ],
                     ],
                   ),
                   Row(
                     children: [
+                      IconButton(
+                        icon: const FaIcon(FontAwesomeIcons.arrowsRotate, size: 12, color: EmberColors.textMuted),
+                        tooltip: 'Refresh recommendations',
+                        onPressed: () => player.refreshRecommendations(),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 10),
                       Text('Autoplay', style: TextStyle(color: EmberColors.textMuted.withValues(alpha: 0.8), fontSize: 11)),
                       const SizedBox(width: 4),
                       Switch(

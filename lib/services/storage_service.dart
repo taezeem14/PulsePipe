@@ -28,6 +28,9 @@ class StorageService {
   static const String _shuffleKey = 'sine_shuffle';
   static const String _shuffleLegacyKey = 'pulsepipe_shuffle';
 
+  static const String _autoplayKey = 'sine_autoplay_smart_radio';
+  static const String _autoplayLegacyKey = 'pulsepipe_autoplay_smart_radio';
+
   static const String _searchesKey = 'sine_recent_searches_v1';
   static const String _searchesLegacyKey = 'ember_recent_searches_v1';
 
@@ -337,7 +340,15 @@ class StorageService {
     await _prefs?.setDouble(_eqBassBoostKey, gain);
   }
 
-  Map<int, double> loadBandGains() {
+  bool loadAutoplayEnabled() {
+    return _prefs?.getBool(_autoplayKey) ?? _prefs?.getBool(_autoplayLegacyKey) ?? true;
+  }
+
+  Future<void> saveAutoplayEnabled(bool enabled) async {
+    await _prefs?.setBool(_autoplayKey, enabled);
+  }
+
+    Map<int, double> loadBandGains() {
     final raw = _prefs?.getString(_eqBandGainsKey) ?? _prefs?.getString(_eqBandGainsLegacyKey);
     if (raw == null) return {};
     try {

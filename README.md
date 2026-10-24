@@ -24,7 +24,7 @@
 
 <br/>
 
-### [👉 📲 DOWNLOAD LATEST APK (v1.0.7)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.7.apk) 👈
+### [👉 📲 DOWNLOAD LATEST APK (v1.0.8)](https://github.com/taezeem14/Sine/releases/latest/download/Sine-v1.0.8.apk) 👈
 
 *Tap above to download the APK, install on Android, and elevate your earholes immediately.*
 
@@ -47,6 +47,7 @@ Look, Spotify got greedy with \$11+/month subscription prices and YouTube Music 
 - **Instant sub-1.2s playback** powered by native Android hardware DSP decoding.
 - **Offline vault** for saving tracks directly to `/storage/emulated/0/Sine-Music`.
 - **Real-Time Sound Shaping** with Vocals-Only, Instruments-Only, and 5-band hardware parametric EQ.
+- **Spotify-Grade Smart Radio & Autoplay**: Infinite, algorithmic Song Radio and Artist Radio powered by YouTube Music's recommendation graph (RDAMVM/RD), featuring deduplication, anti-clustering, and seamless queue continuation.
 - Just pure, uninterrupted, audiophile-grade music streamed straight from YouTube & YouTube Music's global catalog.
 
 We cooked so you can vibe. Fr fr. 👨‍🍳🔥
@@ -131,7 +132,7 @@ sequenceDiagram
 ```mermaid
 xychart-beta
     title "Cold-Start Track Playback Latency in Seconds (Lower is Better)"
-    x-axis ["Sine v1.0.7", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
+    x-axis ["Sine v1.0.8", "Spotify Free", "YouTube Music", "Generic YT Scrapers"]
     y-axis "Startup Latency (Seconds)" 0 --> 35
     bar [1.2, 8.5, 6.2, 28.0]
 ```
@@ -139,7 +140,7 @@ xychart-beta
 ```
 Playback Latency Comparison:
 ========================================================================
-Sine v1.0.7          [██] 1.2s (Hardware AAC DSP + itag 140 Prioritization)
+Sine v1.0.8          [██] 1.2s (Hardware AAC DSP + itag 140 Prioritization)
 Spotify Free         [████████] 8.5s (Audio Ad Insertion + DRM Handshake)
 YouTube Music        [██████] 6.2s (Video Ad Ingestion + Player Handshake)
 Generic Scrapers     [████████████████████████████] 28.0s (DASH 403 Retries)
@@ -186,7 +187,7 @@ stateDiagram-v2
 
 ## 🥊 Sine vs. The Competition
 
-| Feature | ⚡ **Sine v1.0.7** | 🟢 **Spotify Free** | 🔴 **YouTube Music** | 📺 **NewPipe** |
+| Feature | ⚡ **Sine v1.0.8** | 🟢 **Spotify Free** | 🔴 **YouTube Music** | 📺 **NewPipe** |
 | :--- | :---: | :---: | :---: | :---: |
 | **Monthly Cost** | **\$0 / Free Forever** | \$11.99/mo (Premium) | \$13.99/mo (Premium) | \$0 / Free |
 | **Audio Ads** | 🚫 **ZERO ADS** | 🔊 Unskippable 30s Ads | 🔊 Unskippable Video Ads | 🚫 ZERO ADS |
@@ -276,14 +277,14 @@ stateDiagram-v2
 ## ⚡ Installation (Super Easy)
 
 1. Head over to the **[Latest Releases](https://github.com/taezeem14/Sine/releases/latest)**.
-2. Download **`Sine-v1.0.7.apk`**.
+2. Download **`Sine-v1.0.8.apk`**.
 3. On your Android device, tap the downloaded APK.
 4. If prompted, toggle *"Allow install from unknown sources"* (it's open-source, safe, and completely transparent).
 5. Open Sine and start streaming! 🚀
 
 ### Or Install via ADB:
 ```bash
-adb install -r Sine-v1.0.7.apk
+adb install -r Sine-v1.0.8.apk
 ```
 
 ---
@@ -300,6 +301,28 @@ Sine is engineered with modern Flutter & Dart architecture:
 - **Smart Metadata Cleaner**: Custom regex engine extracting true track titles & artist bylines from bloated YouTube video titles
 - **Sponsor Filtering**: Official [SponsorBlock API](https://sponsor.ajay.app/) integration
 - **State Management**: Reactive `Provider` pattern
+
+---
+
+### 3. Spotify-Grade Smart Radio & Autoplay Architecture
+
+```mermaid
+flowchart TD
+    Trigger(["User Taps 'Start Song / Artist Radio'<br/>or Queue Reaches Tail with Autoplay ON"]) --> SeedCheck{"Station Type?"}
+    
+    SeedCheck -- "Song Radio" --> MLMix["Query InnerTube ML Radio (RDAMVM & RD)<br/>Fetches YouTube Music Collaborative Graph"]
+    SeedCheck -- "Artist Radio" --> ArtistHits["Query Artist Discography & Peer Artists<br/>Fetches Top Tracks & Collaborative Network"]
+    
+    MLMix --> Pool["Candidate Song Pool"]
+    ArtistHits --> Pool
+    
+    Pool --> Dedup["Spotify Deduplication Filter<br/>(Purges Duplicate IDs & Normalized Titles)"]
+    Dedup --> NoiseFilter["Anti-Noise Filter<br/>(Purges Karaoke, Synthesia Tutorials, 10-Hour Loops, Reactions)"]
+    NoiseFilter --> AntiCluster["Anti-Clustering & Pacing Shaper<br/>(Max 2 Consecutive Songs per Artist)"]
+    
+    AntiCluster --> InfiniteQueue["Queue Infinite Radio Station (25-50 Tracks)<br/>Retains Continuation Token for Automatic Auto-Paging"]
+    InfiniteQueue --> Playback(["🎶 Seamless Continuous Playback"])
+```
 
 ---
 
@@ -326,7 +349,7 @@ flutter build apk --release --no-tree-shake-icons
 ```
 
 Your compiled APK will be located at:
-`build/app/outputs/flutter-apk/app-release.apk` (or `Sine-v1.0.7.apk`)
+`build/app/outputs/flutter-apk/app-release.apk` (or `Sine-v1.0.8.apk`)
 
 ---
 

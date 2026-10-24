@@ -12,6 +12,7 @@ import '../services/storage_service.dart';
 import '../services/youtube_importer_service.dart';
 import '../services/stream_resolver_service.dart';
 import '../services/stem_service.dart';
+import '../services/smart_radio_service.dart';
 
 enum IsolationMode {
   none,
@@ -55,6 +56,22 @@ class PlayerProvider extends ChangeNotifier {
   final List<Song> _recommendations = [];
   List<Song> _categoryTracks = [];
   bool _isAutoplayEnabled = false;
+  // Spotify-Grade Smart Radio & Autoplay state
+  bool _isRadioActive = false;
+  bool get isRadioActive => _isRadioActive;
+  Song? _radioSeedSong;
+  Song? get radioSeedSong => _radioSeedSong;
+  bool _radioIsArtist = false;
+  bool get radioIsArtist => _radioIsArtist;
+  String? _radioContinuationToken;
+  String? _radioLastVideoId;
+  String? _radioLastParams;
+  final Set<String> _radioSeenVideoIds = {};
+  bool _isLoadingMoreRadioTracks = false;
+
+  bool _isLoadingRecommendations = false;
+  bool get isLoadingRecommendations => _isLoadingRecommendations;
+
 
   /// Counts consecutive stream resolution failures to break infinite skip loops
   int _consecutiveStreamFailures = 0;
@@ -197,6 +214,7 @@ class PlayerProvider extends ChangeNotifier {
     _eqEnabled = _storageService.loadEqualizerEnabled();
     _bassBoost = _storageService.loadBassBoost();
     _bandGains = _storageService.loadBandGains();
+    _isAutoplayEnabled = _storageService.loadAutoplayEnabled();
 
     // Wire up hardware / notification / completion navigation callbacks
     _audioHandler.setNavigationCallbacks(
@@ -364,7 +382,46 @@ class PlayerProvider extends ChangeNotifier {
       return;
     }
 
-    // 5. End of explicit queue reached: stop cleanly (no automatic smart radio)
+    // 5. Infinite Radio Continuation: If active, fetch next batch before halting
+    if (_isRadioActive) {
+      await _fetchMoreRadioTracksIfNeeded();
+      if (_currentIndex < _queue.length - 1) {
+        _currentIndex++;
+        notifyListeners();
+        await playSong(_queue[_currentIndex], isAutoAdvance: true);
+        return;
+      }
+    }
+
+    // 6. Spotify-Grade Smart Autoplay: If enabled and queue finishes, seamlessly continue with similar tracks
+    if (_isAutoplayEnabled && _queue.isNotEmpty) {
+      final lastSong = _queue.last;
+      debugPrint('[PlayerProvider] Autoplay: Queue completed. Generating smart radio continuation from "${lastSong.title}"...');
+      try {
+        final autoTracks = await SmartRadioService.instance.generateAutoplayTracks(
+          lastSong: lastSong,
+          recentHistory: _history,
+          limit: 20,
+        );
+        if (autoTracks.isNotEmpty) {
+          _isRadioActive = true;
+          _radioSeedSong = lastSong;
+          _playingFrom = 'Smart Autoplay: ${lastSong.title}';
+          _queue.addAll(autoTracks);
+          if (_isShuffle) {
+            _unshuffledQueue.addAll(autoTracks);
+          }
+          _currentIndex++;
+          notifyListeners();
+          await playSong(_queue[_currentIndex], isAutoAdvance: true);
+          return;
+        }
+      } catch (e) {
+        debugPrint('[PlayerProvider] Autoplay generation failed: $e');
+      }
+    }
+
+    // 7. End of explicit queue reached: stop cleanly
     _isPlaying = false;
     _position = Duration.zero;
     _isLoadingStream = false;
@@ -377,6 +434,9 @@ class PlayerProvider extends ChangeNotifier {
     if (_currentIndex + 1 < _queue.length) {
       final nextTrack = _queue[_currentIndex + 1];
       StreamResolverService.preloadNextSong(nextTrack);
+    }
+    if (_isRadioActive) {
+      _fetchMoreRadioTracksIfNeeded();
     }
   }
 
@@ -477,6 +537,12 @@ class PlayerProvider extends ChangeNotifier {
       }
     });
 
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (currentSong?.id == song.id && _playSessionId == thisSession) {
+        _loadRecommendations(song);
+      }
+    });
+
     await _audioHandler.playSong(resolvedSong);
     if (_playSessionId != thisSession) {
       // Newer song selection superseded this one; discard outdated state updates
@@ -486,6 +552,9 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
     if (_isMixActive) {
       _fetchMoreMixTracksIfNeeded();
+    }
+    if (_isRadioActive) {
+      _fetchMoreRadioTracksIfNeeded();
     }
   }
 
@@ -509,20 +578,109 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> startRadio(Song song) async {
+  Future<void> startRadio(Song song, {bool isArtistRadio = false}) async {
+    _isRadioActive = true;
     _isMixActive = false;
     _activeMixPlaylistId = null;
-    final reco = await CatalogService.fetchRecommendations(song, limit: 15);
-    _queue = [song, ...reco];
-    _currentIndex = 0;
-    _playingFrom = 'Radio: ${song.title}';
+    _radioSeedSong = song;
+    _radioIsArtist = isArtistRadio;
+    _radioSeenVideoIds.clear();
+
+    _playingFrom = isArtistRadio ? 'Artist Radio: ${song.artist}' : 'Song Radio: ${song.title}';
     notifyListeners();
-    await playSong(song, playingFrom: _playingFrom);
+
+    try {
+      final station = await SmartRadioService.instance.generateRadioStation(
+        seedSong: song,
+        isArtistRadio: isArtistRadio,
+      );
+
+      _radioContinuationToken = station.continuationToken;
+      _radioLastVideoId = station.nextVideoId;
+      _radioLastParams = station.nextParams;
+      _radioSeenVideoIds.addAll(station.seenVideoIds);
+
+      _queue = List.from(station.songs);
+      _currentIndex = 0;
+      notifyListeners();
+
+      await playSong(song, playingFrom: _playingFrom);
+    } catch (e) {
+      debugPrint('[PlayerProvider] Error starting radio: $e');
+      _queue = [song];
+      _currentIndex = 0;
+      await playSong(song, playingFrom: _playingFrom);
+    }
   }
 
-  void toggleAutoplay() {
+  Future<void> toggleAutoplay() async {
     _isAutoplayEnabled = !_isAutoplayEnabled;
+    await _storageService.saveAutoplayEnabled(_isAutoplayEnabled);
     notifyListeners();
+  }
+
+  /// NewPipe & YouTube Music style infinite radio continuation: loads next batch near queue tail
+  Future<void> _fetchMoreRadioTracksIfNeeded() async {
+    if (!_isRadioActive || _isLoadingMoreRadioTracks) return;
+    if (_queue.length - _currentIndex <= 4) {
+      _isLoadingMoreRadioTracks = true;
+      try {
+        final seedVid = _radioSeedSong?.id.replaceFirst('yt_', '');
+        final batch = await SmartRadioService.instance.fetchNextRadioBatch(
+          seedVideoId: seedVid,
+          continuationToken: _radioContinuationToken,
+          lastVideoId: _radioLastVideoId,
+          lastParams: _radioLastParams,
+          seenIds: _radioSeenVideoIds,
+        );
+        if (batch != null && batch.songs.isNotEmpty) {
+          _radioContinuationToken = batch.continuationToken;
+          _radioLastVideoId = batch.nextVideoId;
+          _radioLastParams = batch.nextParams;
+          _queue.addAll(batch.songs);
+          if (_isShuffle) {
+            _unshuffledQueue.addAll(batch.songs);
+          }
+          notifyListeners();
+          debugPrint('[PlayerProvider] Infinitely appended ${batch.songs.length} new radio tracks. Total in queue: ${_queue.length}');
+        }
+      } catch (e) {
+        debugPrint('[PlayerProvider] Error fetching next radio batch: $e');
+      } finally {
+        _isLoadingMoreRadioTracks = false;
+      }
+    }
+  }
+
+  /// Asynchronously loads smart recommendations for the currently playing track
+  Future<void> _loadRecommendations(Song song) async {
+    _isLoadingRecommendations = true;
+    notifyListeners();
+    try {
+      final recs = await SmartRadioService.instance.fetchQueueRecommendations(
+        currentSong: song,
+        currentQueue: _queue,
+        limit: 15,
+      );
+      if (currentSong?.id == song.id) {
+        _recommendations.clear();
+        _recommendations.addAll(recs);
+      }
+    } catch (e) {
+      debugPrint('[PlayerProvider] Load recommendations error: $e');
+    } finally {
+      _isLoadingRecommendations = false;
+      notifyListeners();
+    }
+  }
+
+  /// Pull-to-refresh or explicit refresh for queue recommendations
+  Future<void> refreshRecommendations() async {
+    final cur = currentSong;
+    if (cur != null) {
+      SmartRadioService.clearCaches();
+      await _loadRecommendations(cur);
+    }
   }
 
   Future<void> retryFetchLyrics() async {
@@ -589,8 +747,45 @@ class PlayerProvider extends ChangeNotifier {
           return;
         }
       }
+      if (_isRadioActive) {
+        await _fetchMoreRadioTracksIfNeeded();
+        if (_currentIndex < _queue.length - 1) {
+          _currentIndex++;
+          notifyListeners();
+          await playSong(_queue[_currentIndex], isAutoAdvance: true);
+          return;
+        }
+      }
       if (_repeatMode == 'all') {
         nextIdx = 0;
+      } else if (_isAutoplayEnabled && _queue.isNotEmpty) {
+        final lastSong = _queue.last;
+        final autoTracks = await SmartRadioService.instance.generateAutoplayTracks(
+          lastSong: lastSong,
+          recentHistory: _history,
+          limit: 20,
+        );
+        if (autoTracks.isNotEmpty) {
+          _isRadioActive = true;
+          _radioSeedSong = lastSong;
+          _playingFrom = 'Smart Autoplay: ${lastSong.title}';
+          _queue.addAll(autoTracks);
+          if (_isShuffle) {
+            _unshuffledQueue.addAll(autoTracks);
+          }
+          _currentIndex++;
+          notifyListeners();
+          await playSong(_queue[_currentIndex], isAutoAdvance: true);
+          return;
+        } else {
+          _isPlaying = false;
+          _position = Duration.zero;
+          _isLoadingStream = false;
+          notifyListeners();
+          await _audioHandler.pause();
+          await _audioHandler.seek(Duration.zero);
+          return;
+        }
       } else {
         _isPlaying = false;
         _position = Duration.zero;
@@ -606,6 +801,9 @@ class PlayerProvider extends ChangeNotifier {
     await playSong(_queue[_currentIndex], isAutoAdvance: true);
     if (_isMixActive) {
       _fetchMoreMixTracksIfNeeded();
+    }
+    if (_isRadioActive) {
+      _fetchMoreRadioTracksIfNeeded();
     }
   }
 

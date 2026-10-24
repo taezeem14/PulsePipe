@@ -6,6 +6,7 @@ import 'package:spotify_newpipe/services/lyrics_service.dart';
 import 'package:spotify_newpipe/services/sponsorblock_service.dart';
 import 'package:spotify_newpipe/services/youtube_importer_service.dart';
 import 'package:spotify_newpipe/services/stem_service.dart';
+import 'package:spotify_newpipe/services/smart_radio_service.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
@@ -218,6 +219,32 @@ void main() {
       final stemService = StemService.instance;
       expect(stemService, isNotNull);
       StemService.clearMemoryCache();
+    });
+
+    test('SmartRadioService initializes and supports clearing caches', () {
+      final radio = SmartRadioService.instance;
+      expect(radio, isNotNull);
+      SmartRadioService.clearCaches();
+    });
+
+    test('SmartRadioService generates valid radio station with seed track preserved', () async {
+      const seed = Song(
+        id: 'yt_dQw4w9WgXcQ',
+        title: 'Never Gonna Give You Up',
+        artist: 'Rick Astley',
+        duration: Duration(minutes: 3, seconds: 32),
+        artworkUrl: '',
+        streamUrl: 'https://example.com/audio.mp3',
+      );
+
+      final station = await SmartRadioService.instance.generateRadioStation(
+        seedSong: seed,
+        isArtistRadio: false,
+      );
+
+      expect(station.seedSong.id, seed.id);
+      expect(station.songs, isNotEmpty);
+      expect(station.songs.first.id, seed.id);
     });
   });
 }
